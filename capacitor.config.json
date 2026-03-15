@@ -1,0 +1,15 @@
+{
+  "appId": "com.rekaz.sitevisit",
+  "appName": "Rekaz",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#185FA5",
+      "showSpinner": false
+    }
+  }
+}
