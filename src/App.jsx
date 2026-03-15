@@ -12,6 +12,7 @@ import DailyLogs from './pages/DailyLogs.jsx'
 import Milestones from './pages/Milestones.jsx'
 import Photos from './pages/Photos.jsx'
 import Drawings from './pages/Drawings.jsx'
+import Users from './pages/Users.jsx'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="drawings" element={<Drawings />} />
         <Route path="reports" element={<Reports />} />
         <Route path="schedule" element={<Schedule />} />
+        <Route path="users" element={<Users />} />
       </Route>
     </Routes>
   )
