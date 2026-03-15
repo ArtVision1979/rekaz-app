@@ -340,7 +340,7 @@ export default function Projects() {
                     </td>
                     <td><span className={`badge ${STATUS_COLORS[p.status]||'badge-gray'}`}>{p.status}</span></td>
                     <td>
-                      <div style={{display:'flex',gap:6'}}>
+                      <div style={{display:'flex',gap:6}}>
                         <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={()=>loadProjectCard(p)}>📄 Card</button>
                         <button className="btn btn-sm" onClick={()=>openEdit(p)}>Edit</button>
                         <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(p)}>Delete</button>
