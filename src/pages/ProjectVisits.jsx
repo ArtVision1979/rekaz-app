@@ -139,8 +139,34 @@ export default function ProjectVisits() {
   }
 
   async function toggleStatus(v) {
-    await supabase.from('project_visits').update({ status: STATUS_NEXT[v.status] }).eq('id', v.id)
-    setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: STATUS_NEXT[v.status] } : pv))
+    const nextStatus = STATUS_NEXT[v.status]
+    await supabase.from('project_visits').update({ status: nextStatus }).eq('id', v.id)
+    
+    // Auto-create Site Visit when marked as Completed
+    if (nextStatus === 'completed' && v.status !== 'completed') {
+      const { data: existing } = await supabase
+        .from('site_visits')
+        .select('id')
+        .eq('project_id', v.project_id)
+        .eq('visit_date', v.scheduled_date || new Date().toISOString().split('T')[0])
+        .eq('notes', v.title)
+        .single()
+      
+      if (!existing) {
+        await supabase.from('site_visits').insert({
+          project_id: v.project_id,
+          visit_date: v.scheduled_date || new Date().toISOString().split('T')[0],
+          engineer_name: v.engineer_name || '',
+          notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
+          severity: 'low',
+          status: 'submitted'
+        })
+        // Show confirmation
+        setTimeout(() => alert('✅ Site Visit created automatically for: ' + v.title), 300)
+      }
+    }
+    
+    setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
   }
 
   async function saveTemplates() {
