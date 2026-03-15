@@ -115,6 +115,21 @@ export default function ProjectVisits() {
     await loadVisits(selectedProject.id)
   }
 
+  async function resetToDefault() {
+    if (!selectedProject) return
+    if (!confirm('This will delete all current visits and reload the default list. Continue?')) return
+    await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
+    const toInsert = templateObjects.map((t, i) => ({
+      project_id: selectedProject.id,
+      title: t.title,
+      title_ar: t.title_ar || '',
+      order_index: t.order_index || i + 1,
+      status: 'pending'
+    }))
+    await supabase.from('project_visits').insert(toInsert)
+    await loadVisits(selectedProject.id)
+  }
+
   function openNew() {
     setEditVisit(null)
     setForm({ title: '', title_ar: '', engineer_name: '', scheduled_date: '', scheduled_time: '', status: 'pending', notes: '', order_index: visits.length + 1 })
@@ -321,11 +336,18 @@ export default function ProjectVisits() {
                   </div>
                   <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3, textAlign:'center' }}>{progress}%</div>
                 </div>
-                {visits.length===0 && (
-                  <button className="btn btn-sm" style={{ color:'#185FA5', borderColor:'#185FA5' }} onClick={addDefaultVisits}>
-                    + Load Default Visits
-                  </button>
-                )}
+                <div style={{ display:'flex', gap:8 }}>
+                  {visits.length===0 && (
+                    <button className="btn btn-sm" style={{ color:'#185FA5', borderColor:'#185FA5' }} onClick={addDefaultVisits}>
+                      + Load Default Visits
+                    </button>
+                  )}
+                  {visits.length>0 && (
+                    <button className="btn btn-sm" style={{ color:'#854F0B', borderColor:'#854F0B' }} onClick={resetToDefault}>
+                      ↺ Reset to Default
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
