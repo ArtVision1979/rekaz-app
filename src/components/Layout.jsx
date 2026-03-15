@@ -32,7 +32,7 @@ export default function Layout() {
       {sidebarOpen && <div onClick={()=>setSidebarOpen(false)} style={{position:'fixed',inset:0,zIndex:199}}/>}
       <div className={`sidebar ${sidebarOpen?'open':''}`}>
         <div className="sidebar-logo" style={{padding:'14px 16px'}}>
-          <img src="/rekaz-logo.png" alt="Rekaz" style={{width:'100%', maxWidth:140, height:'auto', borderRadius:6, display:'block', background:'white', padding:'6px'}}/>
+          <img src="/rekaz-logo.jpg" alt="Rekaz" style={{width:'100%', maxWidth:140, height:'auto', borderRadius:6, display:'block', background:'white', padding:'6px'}}/>
           <p style={{fontSize:11,color:'#888',marginTop:6}}>Site Visit Manager</p>
         </div>
         <nav className="sidebar-nav">

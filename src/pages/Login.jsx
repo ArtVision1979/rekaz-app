@@ -28,7 +28,7 @@ export default function Login() {
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <img
-            src="/rekaz-logo.png"
+            src="/rekaz-logo.jpg"
             alt="Rekaz Engineering"
             style={{ width: 180, height: 'auto', marginBottom: 12, borderRadius: 8 }}
           />
