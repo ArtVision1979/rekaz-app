@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
+const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
 
 export default function ProjectVisits() {
   const [projects, setProjects] = useState([])
@@ -19,9 +20,9 @@ export default function ProjectVisits() {
   const [projectSearch, setProjectSearch] = useState('')
   const [newTemplateName, setNewTemplateName] = useState('')
   const [form, setForm] = useState({
-    title: '', title_ar: '', engineer_name: '',
-    scheduled_date: '', scheduled_time: '',
-    status: 'pending', notes: ''
+    title:'', title_ar:'', engineer_name:'',
+    scheduled_date:'', scheduled_time:'',
+    status:'pending', notes:''
   })
 
   useEffect(() => { loadInitial() }, [])
@@ -35,27 +36,25 @@ export default function ProjectVisits() {
         supabase.from('visit_templates').select('*').order('order_index')
       ])
       setProjects(p || [])
-      const savedEngineers = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-      const userNames = (u || []).map(u => u.full_name || u.email).filter(Boolean)
-      setEngineers([...new Set([...userNames, ...savedEngineers])])
+      const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
+      const userNames = (u||[]).map(u => u.full_name||u.email).filter(Boolean)
+      setEngineers([...new Set([...userNames, ...saved])])
       setTemplates(t || [])
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
   async function loadVisits(projectId) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('project_visits')
       .select('*')
       .eq('project_id', projectId)
       .order('order_index')
-    if (error) console.error(error)
     setVisits(data || [])
   }
 
   async function loadDefaultVisits() {
-    if (!selectedProject) return alert('Select a project first')
-    if (templates.length === 0) return alert('No templates found. Please check Supabase visit_templates table.')
+    if (!selectedProject || templates.length === 0) return alert('No templates found.')
     setSaving(true)
     try {
       const toInsert = templates.map((t, i) => ({
@@ -65,8 +64,7 @@ export default function ProjectVisits() {
         order_index: t.order_index || i + 1,
         status: 'pending'
       }))
-      const { error } = await supabase.from('project_visits').insert(toInsert)
-      if (error) throw error
+      await supabase.from('project_visits').insert(toInsert)
       await loadVisits(selectedProject.id)
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
@@ -77,15 +75,23 @@ export default function ProjectVisits() {
     setSaving(true)
     try {
       await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
-      await loadDefaultVisits()
+      const toInsert = templates.map((t, i) => ({
+        project_id: selectedProject.id,
+        title: t.title,
+        title_ar: t.title_ar || '',
+        order_index: t.order_index || i + 1,
+        status: 'pending'
+      }))
+      if (toInsert.length) await supabase.from('project_visits').insert(toInsert)
+      await loadVisits(selectedProject.id)
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
 
   async function deleteAllVisits() {
     if (!selectedProject) return
-    if (!confirm('Delete ALL visits for this project?')) return
+    if (!confirm('Delete ALL visits?')) return
     await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
-    await loadVisits(selectedProject.id)
+    setVisits([])
   }
 
   function saveEngineerName(name) {
@@ -100,18 +106,18 @@ export default function ProjectVisits() {
 
   function openNew() {
     setEditVisit(null)
-    setForm({ title: '', title_ar: '', engineer_name: '', scheduled_date: '', scheduled_time: '', status: 'pending', notes: '' })
+    setForm({ title:'', title_ar:'', engineer_name:'', scheduled_date:'', scheduled_time:'', status:'pending', notes:'' })
     setShowModal(true)
   }
 
   function openEdit(v) {
     setEditVisit(v)
     setForm({
-      title: v.title, title_ar: v.title_ar || '',
-      engineer_name: v.engineer_name || '',
-      scheduled_date: v.scheduled_date || '',
-      scheduled_time: v.scheduled_time || '',
-      status: v.status, notes: v.notes || ''
+      title: v.title, title_ar: v.title_ar||'',
+      engineer_name: v.engineer_name||'',
+      scheduled_date: v.scheduled_date||'',
+      scheduled_time: v.scheduled_time||'',
+      status: v.status, notes: v.notes||''
     })
     setShowModal(true)
   }
@@ -121,18 +127,15 @@ export default function ProjectVisits() {
     try {
       saveEngineerName(form.engineer_name)
       const data = { ...form, project_id: selectedProject.id }
-      if (editVisit) {
-        await supabase.from('project_visits').update(data).eq('id', editVisit.id)
-      } else {
-        await supabase.from('project_visits').insert(data)
-      }
+      if (editVisit) { await supabase.from('project_visits').update(data).eq('id', editVisit.id) }
+      else { await supabase.from('project_visits').insert(data) }
       setShowModal(false)
       await loadVisits(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
   async function handleDelete(v) {
-    if (!confirm(`Delete "${v.title}"?`)) return
+    if (!confirm('Delete this visit?')) return
     await supabase.from('project_visits').delete().eq('id', v.id)
     await loadVisits(selectedProject.id)
   }
@@ -140,47 +143,40 @@ export default function ProjectVisits() {
   async function toggleStatus(v) {
     const nextStatus = STATUS_NEXT[v.status]
     await supabase.from('project_visits').update({ status: nextStatus }).eq('id', v.id)
-    
-    // Auto-create Site Visit when marked as Completed
-    if (nextStatus === 'completed' && v.status !== 'completed') {
-      const { data: existing } = await supabase
-        .from('site_visits')
-        .select('id')
-        .eq('project_id', v.project_id)
-        .eq('visit_date', v.scheduled_date || new Date().toISOString().split('T')[0])
-        .eq('notes', v.title)
-        .single()
-      
+    if (nextStatus === 'completed') {
+      const today = new Date().toISOString().split('T')[0]
+      const visitDate = v.scheduled_date || today
+      const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title).maybeSingle()
       if (!existing) {
         await supabase.from('site_visits').insert({
           project_id: v.project_id,
-          visit_date: v.scheduled_date || new Date().toISOString().split('T')[0],
+          visit_date: visitDate,
           engineer_name: v.engineer_name || '',
           notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
           severity: 'low',
           status: 'submitted'
         })
-        // Show confirmation
-        setTimeout(() => alert('✅ Site Visit created automatically for: ' + v.title), 300)
+        alert('✅ Site Visit created: ' + v.title)
       }
     }
-    
     setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
   }
 
   async function saveTemplates() {
     await supabase.from('visit_templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
     const toInsert = templates.filter(t => t.title?.trim()).map((t, i) => ({
-      title: t.title, title_ar: t.title_ar || '', order_index: i + 1
+      title: t.title, title_ar: t.title_ar||'', order_index: i+1
     }))
     if (toInsert.length) await supabase.from('visit_templates').insert(toInsert)
     setShowTemplateModal(false)
     await loadInitial()
   }
 
+  function printVisits() { window.print() }
+
   const filteredProjects = projects.filter(p =>
     p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
-    (p.project_no || '').toLowerCase().includes(projectSearch.toLowerCase())
+    (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())
   )
 
   const completed = visits.filter(v => v.status === 'completed').length
@@ -188,130 +184,91 @@ export default function ProjectVisits() {
   const progress = total > 0 ? Math.round((completed / total) * 100) : 0
 
   return (
-    <>
-      <style>{`
-        @media print {
-          body > * { display: none !important; }
-          #visits-print { display: block !important; }
-        }
-        #visits-print { display: none; }
-      `}</style>
+    <div>
+      <style>{`@media print { body > * { display:none!important; } #visits-print { display:block!important; } } #visits-print { display:none; }`}</style>
 
       {selectedProject && visits.length > 0 && (
         <div id="visits-print">
           <div style={{fontFamily:'Arial,sans-serif',maxWidth:800,margin:'0 auto',padding:40,color:'#000'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'3px solid #185FA5',paddingBottom:20,marginBottom:24}}>
+            <div style={{display:'flex',justifyContent:'space-between',borderBottom:'3px solid #185FA5',paddingBottom:16,marginBottom:20}}>
               <div>
-                <img src="/rekaz-logo.jpg" alt="Rekaz" style={{height:50,width:'auto'}}/>
-                <div style={{fontSize:12,color:'#666',marginTop:4}}>مكتب ركاز للهندسة</div>
+                <img src="/rekaz-logo.jpg" alt="Rekaz" style={{height:48,width:'auto'}}/>
               </div>
               <div style={{textAlign:'right'}}>
                 <div style={{fontSize:18,fontWeight:700,color:'#185FA5'}}>قائمة زيارات المشروع</div>
-                <div style={{fontSize:13,color:'#333',marginTop:4}}>Project Visits List</div>
-                <div style={{fontSize:11,color:'#888',marginTop:2}}>{new Date().toLocaleDateString('en-GB')}</div>
+                <div style={{fontSize:12,color:'#888'}}>{new Date().toLocaleDateString('en-GB')}</div>
               </div>
             </div>
-            <div style={{background:'#f5f5f0',borderRadius:8,padding:14,marginBottom:20}}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 24px',fontSize:12}}>
-                <div><span style={{color:'#666'}}>Project: </span><strong>{selectedProject.name}</strong></div>
-                <div><span style={{color:'#666'}}>No: </span>{selectedProject.project_no}</div>
-                <div><span style={{color:'#666'}}>Client: </span>{selectedProject?.client_name||'—'}</div>
-                <div><span style={{color:'#666'}}>Location: </span>{selectedProject.location||'—'}</div>
-                <div><span style={{color:'#666'}}>Completed: </span>{visits.filter(v=>v.status==='completed').length}/{visits.length}</div>
-              </div>
+            <div style={{background:'#f5f5f0',borderRadius:8,padding:12,marginBottom:16,fontSize:12}}>
+              <div><strong>{selectedProject.name}</strong> · {selectedProject.project_no}</div>
+              <div style={{color:'#666',marginTop:4}}>Client: {selectedProject.client_name||'—'} · Engineer: {selectedProject.engineer_name||'—'}</div>
+              <div style={{color:'#666'}}>Completed: {completed}/{total}</div>
             </div>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead>
                 <tr style={{background:'#185FA5',color:'white'}}>
-                  <th style={{padding:'8px 10px',textAlign:'left',width:30}}>#</th>
-                  <th style={{padding:'8px 10px',textAlign:'left'}}>Visit — الزيارة</th>
-                  <th style={{padding:'8px 10px',textAlign:'left'}}>Engineer</th>
-                  <th style={{padding:'8px 10px',textAlign:'left'}}>Date</th>
-                  <th style={{padding:'8px 10px',textAlign:'center',width:90}}>Status</th>
+                  <th style={{padding:'7px 10px',textAlign:'left',width:30}}>#</th>
+                  <th style={{padding:'7px 10px',textAlign:'left'}}>Visit</th>
+                  <th style={{padding:'7px 10px',textAlign:'left'}}>Engineer</th>
+                  <th style={{padding:'7px 10px',textAlign:'left'}}>Date</th>
+                  <th style={{padding:'7px 10px',textAlign:'center',width:90}}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {visits.map((v,i)=>(
+                {visits.map((v,i) => (
                   <tr key={v.id} style={{background:i%2===0?'#fafafa':'white'}}>
-                    <td style={{padding:'7px 10px',color:'#888'}}>{i+1}</td>
-                    <td style={{padding:'7px 10px'}}>
+                    <td style={{padding:'6px 10px',color:'#888'}}>{i+1}</td>
+                    <td style={{padding:'6px 10px'}}>
                       <div style={{fontWeight:500}}>{v.title}</div>
-                      {v.title_ar&&<div style={{fontSize:11,color:'#666'}}>{v.title_ar}</div>}
+                      {v.title_ar && <div style={{fontSize:11,color:'#666'}}>{v.title_ar}</div>}
                     </td>
-                    <td style={{padding:'7px 10px',color:'#666'}}>{v.engineer_name||'—'}</td>
-                    <td style={{padding:'7px 10px',color:'#666'}}>{v.scheduled_date||'—'}</td>
-                    <td style={{padding:'7px 10px',textAlign:'center',color:v.status==='completed'?'#0F6E56':v.status==='scheduled'?'#185FA5':'#888',fontWeight:500}}>
-                      {STATUS_LABELS[v.status]}
-                    </td>
+                    <td style={{padding:'6px 10px',color:'#666'}}>{v.engineer_name||'—'}</td>
+                    <td style={{padding:'6px 10px',color:'#666'}}>{v.scheduled_date||'—'}</td>
+                    <td style={{padding:'6px 10px',textAlign:'center',color:STATUS_PRINT_COLOR[v.status],fontWeight:500}}>{STATUS_LABELS[v.status]}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:40,marginTop:50}}>
-              <div style={{textAlign:'center'}}>
-                <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
-                  <div style={{fontSize:12}}>Client Signature — توقيع المالك</div>
-                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject?.client_name||'—'}</div>
-                </div>
-              </div>
-              <div style={{textAlign:'center'}}>
-                <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
-                  <div style={{fontSize:12}}>Engineer Signature — توقيع المهندس</div>
-                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject?.engineer_name||'—'}</div>
-                </div>
-              </div>
-            </div>
-            <div style={{borderTop:'1px solid #ddd',marginTop:32,paddingTop:12,textAlign:'center',fontSize:10,color:'#aaa'}}>
-              مكتب ركاز للهندسة · البحرين · {new Date().toLocaleDateString('en-GB')}
+              <div style={{textAlign:'center'}}><div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}><div style={{fontSize:12}}>Client — {selectedProject.client_name||'—'}</div></div></div>
+              <div style={{textAlign:'center'}}><div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}><div style={{fontSize:12}}>Engineer — {selectedProject.engineer_name||'—'}</div></div></div>
             </div>
           </div>
         </div>
       )}
-      {/* Visit Modal */}
+
       {showModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowModal(false)}>
           <div className="modal">
             <h3>{editVisit ? 'Edit Visit' : 'New Visit'}</h3>
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label className="form-label">Visit Name (English) *</label>
-                <input className="form-input" value={form.title}
-                  onChange={e => setForm(f => ({...f, title: e.target.value}))}
-                  required autoFocus list="visit-templates-list" placeholder="e.g. Site Inspection" />
-                <datalist id="visit-templates-list">
-                  {templates.map((t, i) => <option key={i} value={t.title} />)}
-                </datalist>
+                <input className="form-input" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} required autoFocus list="vtlist"/>
+                <datalist id="vtlist">{templates.map((t,i)=><option key={i} value={t.title}/>)}</datalist>
               </div>
               <div className="form-group">
                 <label className="form-label">الاسم بالعربي</label>
-                <input className="form-input" value={form.title_ar}
-                  onChange={e => setForm(f => ({...f, title_ar: e.target.value}))}
-                  placeholder="مثال: معاينة الموقع" />
+                <input className="form-input" value={form.title_ar} onChange={e=>setForm(f=>({...f,title_ar:e.target.value}))} placeholder="معاينة الموقع"/>
               </div>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <input className="form-input" value={form.engineer_name}
-                  onChange={e => setForm(f => ({...f, engineer_name: e.target.value}))}
-                  list="engineers-list" placeholder="Type or select..." />
-                <datalist id="engineers-list">
-                  {engineers.map((e, i) => <option key={i} value={e} />)}
-                </datalist>
+                <input className="form-input" value={form.engineer_name} onChange={e=>setForm(f=>({...f,engineer_name:e.target.value}))} list="englist" placeholder="Type or select..."/>
+                <datalist id="englist">{engineers.map((e,i)=><option key={i} value={e}/>)}</datalist>
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
                   <label className="form-label">Date</label>
-                  <input type="date" className="form-input" value={form.scheduled_date}
-                    onChange={e => setForm(f => ({...f, scheduled_date: e.target.value}))} />
+                  <input type="date" className="form-input" value={form.scheduled_date} onChange={e=>setForm(f=>({...f,scheduled_date:e.target.value}))}/>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Time</label>
-                  <input type="time" className="form-input" value={form.scheduled_time}
-                    onChange={e => setForm(f => ({...f, scheduled_time: e.target.value}))} />
+                  <input type="time" className="form-input" value={form.scheduled_time} onChange={e=>setForm(f=>({...f,scheduled_time:e.target.value}))}/>
                 </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Status</label>
-                <select className="form-input" value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))}>
+                <select className="form-input" value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
                   <option value="pending">Pending</option>
                   <option value="scheduled">Scheduled</option>
                   <option value="completed">Completed</option>
@@ -320,148 +277,103 @@ export default function ProjectVisits() {
               </div>
               <div className="form-group">
                 <label className="form-label">Notes</label>
-                <textarea className="form-input" value={form.notes}
-                  onChange={e => setForm(f => ({...f, notes: e.target.value}))} />
+                <textarea className="form-input" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : editVisit ? 'Save' : 'Create'}</button>
+                <button type="button" className="btn" onClick={()=>setShowModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving?'Saving...':editVisit?'Save':'Create'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Template Modal */}
       {showTemplateModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowTemplateModal(false)}>
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTemplateModal(false)}>
           <div className="modal">
             <h3>Edit Visit Templates</h3>
-            <div style={{ marginBottom:12 }}>
-              {templates.map((t, i) => (
-                <div key={i} style={{ display:'flex', gap:6, marginBottom:6, alignItems:'center' }}>
-                  <span style={{ fontSize:11, color:'var(--text-muted)', width:20, flexShrink:0 }}>{i+1}</span>
-                  <input className="form-input" style={{ flex:1 }} value={t.title}
-                    onChange={e => setTemplates(prev => prev.map((v,j) => j===i ? {...v, title:e.target.value} : v))}
-                    placeholder="English" />
-                  <input className="form-input" style={{ flex:1 }} value={t.title_ar||''}
-                    onChange={e => setTemplates(prev => prev.map((v,j) => j===i ? {...v, title_ar:e.target.value} : v))}
-                    placeholder="العربي" />
-                  <button className="btn btn-sm" style={{ color:'#A32D2D', borderColor:'#A32D2D', flexShrink:0 }}
-                    onClick={() => setTemplates(prev => prev.filter((_,j) => j!==i))}>✕</button>
+            <div style={{marginBottom:12}}>
+              {templates.map((t,i)=>(
+                <div key={i} style={{display:'flex',gap:6,marginBottom:6,alignItems:'center'}}>
+                  <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
+                  <input className="form-input" style={{flex:1}} value={t.title} onChange={e=>setTemplates(prev=>prev.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="English"/>
+                  <input className="form-input" style={{flex:1}} value={t.title_ar||''} onChange={e=>setTemplates(prev=>prev.map((v,j)=>j===i?{...v,title_ar:e.target.value}:v))} placeholder="العربي"/>
+                  <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D',flexShrink:0}} onClick={()=>setTemplates(prev=>prev.filter((_,j)=>j!==i))}>✕</button>
                 </div>
               ))}
             </div>
-            <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-              <input className="form-input" value={newTemplateName}
-                onChange={e => setNewTemplateName(e.target.value)}
-                placeholder="New visit type..." />
-              <button className="btn btn-primary btn-sm" onClick={() => {
-                if(newTemplateName.trim()) {
-                  setTemplates(p => [...p, { title: newTemplateName.trim(), title_ar: '' }])
-                  setNewTemplateName('')
-                }
-              }}>Add</button>
+            <div style={{display:'flex',gap:8,marginBottom:16}}>
+              <input className="form-input" value={newTemplateName} onChange={e=>setNewTemplateName(e.target.value)} placeholder="New visit type..."/>
+              <button className="btn btn-primary btn-sm" onClick={()=>{if(newTemplateName.trim()){setTemplates(p=>[...p,{title:newTemplateName.trim(),title_ar:''}]);setNewTemplateName('')}}}>Add</button>
             </div>
             <div className="modal-footer">
-              <button className="btn" onClick={() => setShowTemplateModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveTemplates}>Save Templates</button>
+              <button className="btn" onClick={()=>setShowTemplateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveTemplates}>Save</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Header */}
       <div className="page-header">
-
         <div><h3>Project Visits</h3><div className="page-sub">Track visits per project</div></div>
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
           {visits.length > 0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={printVisits}>🖨 Print</button>}
-          <button className="btn btn-sm" onClick={() => setShowTemplateModal(true)}>⚙ Templates</button>
+          <button className="btn btn-sm" onClick={()=>setShowTemplateModal(true)}>⚙ Templates</button>
           <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Visit</button>
         </div>
       </div>
 
-      {/* Project Search */}
-      <div style={{ marginBottom:10 }}>
-        <input className="form-input" style={{ maxWidth:280 }}
-          placeholder="Search projects..."
-          value={projectSearch} onChange={e => setProjectSearch(e.target.value)} />
+      <div style={{marginBottom:10}}>
+        <input className="form-input" style={{maxWidth:280}} placeholder="Search projects..." value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
       </div>
 
-      {/* Project Tabs */}
-      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-        {filteredProjects.map(p => (
-          <button key={p.id}
-            className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
-            style={{ fontSize:12 }}
-            onClick={() => setSelectedProject(p)}>
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {filteredProjects.map(p=>(
+          <button key={p.id} className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`} style={{fontSize:12}} onClick={()=>setSelectedProject(p)}>
             {p.name}
           </button>
         ))}
       </div>
 
       {selectedProject && (
-        <>
-          {/* Project Info */}
-          <div className="card" style={{ marginBottom:16 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12 }}>
+        <div>
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{ fontWeight:500, fontSize:15 }}>{selectedProject.name}</div>
-                <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2 }}>
-                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject?.client_name||'—'}
+                <div style={{fontWeight:500,fontSize:15}}>{selectedProject.name}</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
+                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize:22, fontWeight:500, color:'#185FA5' }}>{completed}/{total}</div>
-                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>Completed</div>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:22,fontWeight:500,color:'#185FA5'}}>{completed}/{total}</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>Completed</div>
                 </div>
-                <div style={{ width:70 }}>
-                  <div className="progress-bar" style={{ height:6 }}>
-                    <div className="progress-fill" style={{ width:`${progress}%` }}/>
-                  </div>
-                  <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3, textAlign:'center' }}>{progress}%</div>
+                <div style={{width:70}}>
+                  <div className="progress-bar" style={{height:6}}><div className="progress-fill" style={{width:`${progress}%`}}/></div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3,textAlign:'center'}}>{progress}%</div>
                 </div>
-                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                  {total === 0 && (
-                    <button className="btn btn-sm" style={{ color:'#185FA5', borderColor:'#185FA5' }}
-                      onClick={loadDefaultVisits} disabled={saving}>
-                      {saving ? 'Loading...' : '+ Load Default'}
-                    </button>
-                  )}
-                  {total > 0 && (
-                    <>
-                      <button className="btn btn-sm" style={{ color:'#854F0B', borderColor:'#854F0B' }}
-                        onClick={resetToDefault} disabled={saving}>
-                        ↺ Reset to Default
-                      </button>
-                      <button className="btn btn-sm" style={{ color:'#A32D2D', borderColor:'#A32D2D' }}
-                        onClick={deleteAllVisits}>
-                        🗑 Delete All
-                      </button>
-                    </>
-                  )}
+                <div style={{display:'flex',gap:6'}}>
+                  {total===0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'+ Load Default'}</button>}
+                  {total>0 && <button className="btn btn-sm" style={{color:'#854F0B',borderColor:'#854F0B'}} onClick={resetToDefault} disabled={saving}>↺ Reset</button>}
+                  {total>0 && <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={deleteAllVisits}>🗑 Delete All</button>}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Visits Table */}
           <div className="card">
-            {loading ? <div style={{ color:'var(--text-muted)', padding:16 }}>Loading...</div> :
-              visits.length === 0 ? (
+            {loading ? <div style={{color:'var(--text-muted)',padding:16}}>Loading...</div> :
+              visits.length===0 ? (
                 <div className="empty">
                   <p>No visits yet.</p>
-                  <button className="btn btn-primary" style={{ marginTop:12 }}
-                    onClick={loadDefaultVisits} disabled={saving}>
-                    {saving ? 'Loading...' : 'Load Default Visits'}
-                  </button>
+                  <button className="btn btn-primary" style={{marginTop:12}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'Load Default Visits'}</button>
                 </div>
               ) : (
                 <table className="table">
                   <thead><tr>
-                    <th style={{ width:32 }}>#</th>
+                    <th style={{width:32}}>#</th>
                     <th>Visit</th>
                     <th>Engineer</th>
                     <th>Date</th>
@@ -470,31 +382,22 @@ export default function ProjectVisits() {
                     <th></th>
                   </tr></thead>
                   <tbody>
-                    {visits.map((v, i) => (
-                      <tr key={v.id} style={{ opacity: v.status==='cancelled'?0.5:1 }}>
-                        <td style={{ color:'var(--text-muted)', fontSize:11 }}>{i+1}</td>
+                    {visits.map((v,i)=>(
+                      <tr key={v.id} style={{opacity:v.status==='cancelled'?0.5:1}}>
+                        <td style={{color:'var(--text-muted)',fontSize:11}}>{i+1}</td>
                         <td>
-                          <div style={{ fontWeight:500, textDecoration:v.status==='completed'?'line-through':'none', color:v.status==='completed'?'var(--text-muted)':'var(--text)' }}>
-                            {v.title}
-                          </div>
-                          {v.title_ar && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{v.title_ar}</div>}
-                          {v.notes && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2, fontStyle:'italic' }}>{v.notes}</div>}
+                          <div style={{fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
+                          {v.title_ar && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{v.title_ar}</div>}
+                          {v.notes && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{v.notes}</div>}
                         </td>
-                        <td style={{ color:'var(--text-muted)', fontSize:12 }}>{v.engineer_name||'—'}</td>
-                        <td style={{ color:'var(--text-muted)', fontSize:12 }}>{v.scheduled_date||'—'}</td>
-                        <td style={{ color:'var(--text-muted)', fontSize:12 }}>{v.scheduled_time?v.scheduled_time.slice(0,5):'—'}</td>
-                        <td>
-                          <span className={`badge ${STATUS_COLORS[v.status]}`}
-                            style={{ cursor:'pointer' }} onClick={() => toggleStatus(v)}>
-                            {STATUS_LABELS[v.status]}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display:'flex', gap:6 }}>
-                            <button className="btn btn-sm" onClick={() => openEdit(v)}>Edit</button>
-                            <button className="btn btn-sm" style={{ color:'#A32D2D', borderColor:'#A32D2D' }} onClick={() => handleDelete(v)}>Delete</button>
-                          </div>
-                        </td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{v.engineer_name||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{v.scheduled_date||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{v.scheduled_time?v.scheduled_time.slice(0,5):'—'}</td>
+                        <td><span className={`badge ${STATUS_COLORS[v.status]}`} style={{cursor:'pointer'}} onClick={()=>toggleStatus(v)}>{STATUS_LABELS[v.status]}</span></td>
+                        <td><div style={{display:'flex',gap:6}}>
+                          <button className="btn btn-sm" onClick={()=>openEdit(v)}>Edit</button>
+                          <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(v)}>Delete</button>
+                        </div></td>
                       </tr>
                     ))}
                   </tbody>
@@ -502,8 +405,8 @@ export default function ProjectVisits() {
               )
             }
           </div>
-        </>
+        </div>
       )}
-    </>
+    </div>
   )
 }
