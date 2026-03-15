@@ -215,7 +215,7 @@ export default function ProjectVisits() {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 24px',fontSize:12}}>
                 <div><span style={{color:'#666'}}>Project: </span><strong>{selectedProject.name}</strong></div>
                 <div><span style={{color:'#666'}}>No: </span>{selectedProject.project_no}</div>
-                <div><span style={{color:'#666'}}>Client: </span>{selectedProject.client_name||'—'}</div>
+                <div><span style={{color:'#666'}}>Client: </span>{selectedProject?.client_name||'—'}</div>
                 <div><span style={{color:'#666'}}>Location: </span>{selectedProject.location||'—'}</div>
                 <div><span style={{color:'#666'}}>Completed: </span>{visits.filter(v=>v.status==='completed').length}/{visits.length}</div>
               </div>
@@ -251,13 +251,13 @@ export default function ProjectVisits() {
               <div style={{textAlign:'center'}}>
                 <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
                   <div style={{fontSize:12}}>Client Signature — توقيع المالك</div>
-                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject.client_name||'—'}</div>
+                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject?.client_name||'—'}</div>
                 </div>
               </div>
               <div style={{textAlign:'center'}}>
                 <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
                   <div style={{fontSize:12}}>Engineer Signature — توقيع المهندس</div>
-                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject.engineer_name||'—'}</div>
+                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject?.engineer_name||'—'}</div>
                 </div>
               </div>
             </div>
@@ -409,7 +409,7 @@ export default function ProjectVisits() {
               <div>
                 <div style={{ fontWeight:500, fontSize:15 }}>{selectedProject.name}</div>
                 <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2 }}>
-                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
+                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject?.client_name||'—'}
                 </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
