@@ -63,7 +63,34 @@ export default function Projects() {
   }
 
   function printCard() {
-    window.print()
+    const printContent = document.getElementById('project-card-print')
+    if (!printContent) return
+    const w = window.open('', '_blank')
+    w.document.write(`
+      <html><head><title>Project Card - ${showCard?.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 40px; color: #000; direction: rtl; }
+        * { box-sizing: border-box; }
+        img { height: 50px; width: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #185FA5; color: white; padding: 8px 10px; }
+        td { padding: 7px 10px; border-bottom: 0.5px solid #eee; }
+        tr:nth-child(even) td { background: #fafafa; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #185FA5; padding-bottom: 20px; margin-bottom: 24px; }
+        .section { border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 12px; }
+        .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 50px; }
+        .sig { text-align: center; }
+        .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 40px; font-size: 12px; }
+        .footer { border-top: 1px solid #ddd; margin-top: 32px; padding-top: 12px; text-align: center; font-size: 10px; color: #aaa; }
+        @media print { body { padding: 20px; } }
+      </style>
+      </head><body>${printContent.innerHTML}</body></html>
+    `)
+    w.document.close()
+    w.focus()
+    setTimeout(() => { w.print(); w.close() }, 500)
   }
 
   const filtered = projects.filter(p => {
