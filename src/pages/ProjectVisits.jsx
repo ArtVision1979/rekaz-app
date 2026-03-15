@@ -185,7 +185,7 @@ export default function ProjectVisits() {
 
   return (
     <div>
-      <style>{`@media print { body > * { display:none!important; } #visits-print { display:block!important; } } #visits-print { display:none; }`}</style>
+      <style>{`@media print { body > * { display:none!important; } #visits-print { display:block!important; position:fixed; top:0; left:0; width:100%; } } #visits-print { display:none; }`}</style>
 
       {selectedProject && visits.length > 0 && (
         <div id="visits-print">
