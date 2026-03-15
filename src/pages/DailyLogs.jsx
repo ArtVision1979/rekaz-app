@@ -1,106 +1,125 @@
 import { useState, useEffect } from 'react'
 import { getProjects, supabase } from '../lib/supabase.js'
 
-const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'' }
+const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'', engineer_name:'' }
+const WEATHER = ['Sunny','Cloudy','Partly Cloudy','Rainy','Windy','Hot','Dusty']
 
 export default function DailyLogs() {
-  const [logs, setLogs] = useState([])
   const [projects, setProjects] = useState([])
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editLog, setEditLog] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [projectSearch, setProjectSearch] = useState('')
+  const [engineers, setEngineers] = useState([])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadProjects() }, [])
+  useEffect(() => { if (selectedProject) loadLogs(selectedProject.id) }, [selectedProject])
 
-  async function load() {
+  async function loadProjects() {
     try {
-      const [{ data: l }, p] = await Promise.all([
-        supabase.from('daily_logs').select('*, projects(name)').order('log_date', { ascending: false }),
-        getProjects()
+      const [p, { data: u }] = await Promise.all([
+        getProjects(),
+        supabase.from('users').select('*')
       ])
-      setLogs(l || [])
       setProjects(p || [])
-    } catch(e){ console.error(e) } finally { setLoading(false) }
+      const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
+      const userNames = (u||[]).map(u => u.full_name||u.email).filter(Boolean)
+      setEngineers([...new Set([...userNames, ...saved])])
+      if (p?.length) setSelectedProject(p[0])
+    } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
-  function openNew() { setEditLog(null); setForm(EMPTY); setShowModal(true) }
+  async function loadLogs(projectId) {
+    setLoading(true)
+    try {
+      const { data } = await supabase
+        .from('daily_logs')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('log_date', { ascending: false })
+      setLogs(data || [])
+    } catch(e) { console.error(e) } finally { setLoading(false) }
+  }
+
+  function openNew() {
+    setEditLog(null)
+    setForm({ ...EMPTY, project_id: selectedProject?.id || '' })
+    setShowModal(true)
+  }
 
   function openEdit(l) {
     setEditLog(l)
-    setForm({ project_id: l.project_id, log_date: l.log_date, weather: l.weather||'', workers_count: l.workers_count||'', activities: l.activities||'', issues: l.issues||'' })
+    setForm({
+      project_id: l.project_id,
+      log_date: l.log_date,
+      weather: l.weather||'',
+      workers_count: l.workers_count||'',
+      activities: l.activities||'',
+      issues: l.issues||'',
+      engineer_name: l.engineer_name||''
+    })
     setShowModal(true)
   }
 
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
+      if (form.engineer_name) {
+        const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
+        if (!saved.includes(form.engineer_name)) {
+          saved.push(form.engineer_name)
+          localStorage.setItem('rekaz-engineers', JSON.stringify(saved))
+        }
+      }
       const data = { ...form, workers_count: form.workers_count ? parseInt(form.workers_count) : null }
       if (editLog) { await supabase.from('daily_logs').update(data).eq('id', editLog.id) }
       else { await supabase.from('daily_logs').insert(data) }
-      setShowModal(false); await load()
-    } catch(e){ alert(e.message) } finally { setSaving(false) }
+      setShowModal(false)
+      await loadLogs(selectedProject.id)
+    } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
   async function handleDelete(l) {
     if (!confirm('Delete this log?')) return
     await supabase.from('daily_logs').delete().eq('id', l.id)
-    await load()
+    await loadLogs(selectedProject.id)
   }
 
-  const WEATHER = ['Sunny','Cloudy','Partly Cloudy','Rainy','Windy','Hot','Dusty']
+  const filteredProjects = projects.filter(p =>
+    p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
+    (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())
+  )
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div className="page-header">
-        <div><h3>Daily Logs</h3><div className="page-sub">{logs.length} logs</div></div>
-        <button className="btn btn-primary" onClick={openNew}>+ New Log</button>
-      </div>
-      <div className="card">
-        {loading ? <div style={{color:'#888',padding:16}}>Loading...</div> :
-          logs.length === 0 ? <div className="empty"><p>No daily logs yet.</p></div> : (
-            <table className="table">
-              <thead><tr><th>Project</th><th>Date</th><th>Weather</th><th>Workers</th><th>Activities</th><th>Issues</th><th></th></tr></thead>
-              <tbody>
-                {logs.map(l => (
-                  <tr key={l.id}>
-                    <td style={{fontWeight:500}}>{l.projects?.name||'—'}</td>
-                    <td style={{color:'#888'}}>{l.log_date}</td>
-                    <td style={{color:'#888'}}>{l.weather||'—'}</td>
-                    <td style={{color:'#888'}}>{l.workers_count||'—'}</td>
-                    <td style={{color:'#888',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.activities||'—'}</td>
-                    <td style={{color: l.issues ? '#A32D2D' : '#888',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.issues||'—'}</td>
-                    <td><div style={{display:'flex',gap:6}}>
-                      <button className="btn btn-sm" onClick={()=>openEdit(l)}>Edit</button>
-                      <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(l)}>Delete</button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-      </div>
+    <>
       {showModal && (
-        <div className="modal-overlay">
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal">
             <h3>{editLog ? 'Edit Log' : 'New Daily Log'}</h3>
             <form onSubmit={handleSave}>
               <div className="form-group">
-                <label className="form-label">Project *</label>
-                <select className="form-input" value={form.project_id} onChange={e=>setForm(f=>({...f,project_id:e.target.value}))} required>
-                  <option value="">Select project...</option>
-                  {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <label className="form-label">Engineer</label>
+                <input className="form-input" value={form.engineer_name}
+                  onChange={e=>setForm(f=>({...f,engineer_name:e.target.value}))}
+                  list="engineers-list" placeholder="Type or select..."/>
+                <datalist id="engineers-list">
+                  {engineers.map((e,i) => <option key={i} value={e}/>)}
+                </datalist>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
                   <label className="form-label">Date *</label>
-                  <input type="date" className="form-input" value={form.log_date} onChange={e=>setForm(f=>({...f,log_date:e.target.value}))} required/>
+                  <input type="date" className="form-input" value={form.log_date}
+                    onChange={e=>setForm(f=>({...f,log_date:e.target.value}))} required/>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Workers Count</label>
-                  <input type="number" className="form-input" value={form.workers_count} onChange={e=>setForm(f=>({...f,workers_count:e.target.value}))} placeholder="0"/>
+                  <input type="number" className="form-input" value={form.workers_count}
+                    onChange={e=>setForm(f=>({...f,workers_count:e.target.value}))} placeholder="0"/>
                 </div>
               </div>
               <div className="form-group">
@@ -112,11 +131,15 @@ export default function DailyLogs() {
               </div>
               <div className="form-group">
                 <label className="form-label">Activities</label>
-                <textarea className="form-input" value={form.activities} onChange={e=>setForm(f=>({...f,activities:e.target.value}))} placeholder="Work done today..."/>
+                <textarea className="form-input" value={form.activities}
+                  onChange={e=>setForm(f=>({...f,activities:e.target.value}))} placeholder="Work done today..."/>
               </div>
               <div className="form-group">
                 <label className="form-label">Issues</label>
-                <textarea className="form-input" value={form.issues} onChange={e=>setForm(f=>({...f,issues:e.target.value}))} placeholder="Any issues or observations..." style={{borderColor: form.issues ? '#A32D2D' : undefined}}/>
+                <textarea className="form-input" value={form.issues}
+                  onChange={e=>setForm(f=>({...f,issues:e.target.value}))}
+                  placeholder="Any issues or observations..."
+                  style={{borderColor: form.issues ? '#A32D2D' : undefined}}/>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn" onClick={()=>setShowModal(false)}>Cancel</button>
@@ -126,6 +149,86 @@ export default function DailyLogs() {
           </div>
         </div>
       )}
-    </div>
+
+      <div className="page-header">
+        <div><h3>Daily Logs</h3><div className="page-sub">{logs.length} logs</div></div>
+        <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Log</button>
+      </div>
+
+      <div style={{marginBottom:10}}>
+        <input className="form-input" style={{maxWidth:280}}
+          placeholder="Search projects..."
+          value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
+      </div>
+
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {filteredProjects.map(p=>(
+          <button key={p.id}
+            className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
+            style={{fontSize:12}}
+            onClick={()=>setSelectedProject(p)}>
+            {p.name}
+          </button>
+        ))}
+      </div>
+
+      {selectedProject && (
+        <>
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:500,fontSize:15}}>{selectedProject.name}</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
+                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
+                </div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{fontSize:22,fontWeight:500,color:'#185FA5'}}>{logs.length}</div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>Total Logs</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            {loading ? <div style={{color:'var(--text-muted)',padding:16}}>Loading...</div> :
+              logs.length === 0 ? (
+                <div className="empty">
+                  <p>No logs yet for this project.</p>
+                  <button className="btn btn-primary" style={{marginTop:12}} onClick={openNew}>+ New Log</button>
+                </div>
+              ) : (
+                <table className="table">
+                  <thead><tr>
+                    <th>Date</th>
+                    <th>Engineer</th>
+                    <th>Weather</th>
+                    <th>Workers</th>
+                    <th>Activities</th>
+                    <th>Issues</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>
+                    {logs.map(l=>(
+                      <tr key={l.id}>
+                        <td style={{fontWeight:500}}>{l.log_date}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{l.engineer_name||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{l.weather||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12}}>{l.workers_count||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12,maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.activities||'—'}</td>
+                        <td style={{color: l.issues ? '#A32D2D' : 'var(--text-muted)',fontSize:12,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.issues||'—'}</td>
+                        <td><div style={{display:'flex',gap:6}}>
+                          <button className="btn btn-sm" onClick={()=>openEdit(l)}>Edit</button>
+                          <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(l)}>Delete</button>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            }
+          </div>
+        </>
+      )}
+    </>
   )
 }
