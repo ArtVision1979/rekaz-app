@@ -13,6 +13,7 @@ import Milestones from './pages/Milestones.jsx'
 import Photos from './pages/Photos.jsx'
 import Drawings from './pages/Drawings.jsx'
 import Users from './pages/Users.jsx'
+import ProjectVisits from './pages/ProjectVisits.jsx'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="projects" element={<Projects />} />
+        <Route path="project-visits" element={<ProjectVisits />} />
         <Route path="visits" element={<Visits />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="milestones" element={<Milestones />} />
