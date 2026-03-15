@@ -172,7 +172,32 @@ export default function ProjectVisits() {
     await loadInitial()
   }
 
-  function printVisits() { window.print() }
+  function printVisits() {
+    const printContent = document.getElementById('visits-print')
+    if (!printContent) return
+    const w = window.open('', '_blank')
+    w.document.write(`
+      <html><head><title>Project Visits - ${selectedProject?.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 40px; color: #000; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #185FA5; color: white; padding: 8px 10px; text-align: left; }
+        td { padding: 7px 10px; border-bottom: 0.5px solid #eee; }
+        tr:nth-child(even) { background: #fafafa; }
+        img { height: 48px; width: auto; }
+        .header { display: flex; justify-content: space-between; border-bottom: 3px solid #185FA5; padding-bottom: 16px; margin-bottom: 20px; }
+        .info { background: #f5f5f0; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 12px; }
+        .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 50px; }
+        .sig { text-align: center; }
+        .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 40px; font-size: 12px; }
+        .footer { border-top: 1px solid #ddd; margin-top: 32px; padding-top: 12px; text-align: center; font-size: 10px; color: #aaa; }
+      </style>
+      </head><body>${printContent.innerHTML}</body></html>
+    `)
+    w.document.close()
+    w.focus()
+    setTimeout(() => { w.print(); w.close() }, 500)
+  }
 
   const filteredProjects = projects.filter(p =>
     p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
