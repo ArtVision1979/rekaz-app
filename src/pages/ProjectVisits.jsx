@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import SectionHelp from '../components/SectionHelp.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
@@ -190,6 +189,84 @@ export default function ProjectVisits() {
 
   return (
     <>
+      <style>{`
+        @media print {
+          body > * { display: none !important; }
+          #visits-print { display: block !important; }
+        }
+        #visits-print { display: none; }
+      `}</style>
+
+      {selectedProject && visits.length > 0 && (
+        <div id="visits-print">
+          <div style={{fontFamily:'Arial,sans-serif',maxWidth:800,margin:'0 auto',padding:40,color:'#000'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',borderBottom:'3px solid #185FA5',paddingBottom:20,marginBottom:24}}>
+              <div>
+                <img src="/rekaz-logo.jpg" alt="Rekaz" style={{height:50,width:'auto'}}/>
+                <div style={{fontSize:12,color:'#666',marginTop:4}}>مكتب ركاز للهندسة</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:18,fontWeight:700,color:'#185FA5'}}>قائمة زيارات المشروع</div>
+                <div style={{fontSize:13,color:'#333',marginTop:4}}>Project Visits List</div>
+                <div style={{fontSize:11,color:'#888',marginTop:2}}>{new Date().toLocaleDateString('en-GB')}</div>
+              </div>
+            </div>
+            <div style={{background:'#f5f5f0',borderRadius:8,padding:14,marginBottom:20}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 24px',fontSize:12}}>
+                <div><span style={{color:'#666'}}>Project: </span><strong>{selectedProject.name}</strong></div>
+                <div><span style={{color:'#666'}}>No: </span>{selectedProject.project_no}</div>
+                <div><span style={{color:'#666'}}>Client: </span>{selectedProject.client_name||'—'}</div>
+                <div><span style={{color:'#666'}}>Location: </span>{selectedProject.location||'—'}</div>
+                <div><span style={{color:'#666'}}>Completed: </span>{visits.filter(v=>v.status==='completed').length}/{visits.length}</div>
+              </div>
+            </div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{background:'#185FA5',color:'white'}}>
+                  <th style={{padding:'8px 10px',textAlign:'left',width:30}}>#</th>
+                  <th style={{padding:'8px 10px',textAlign:'left'}}>Visit — الزيارة</th>
+                  <th style={{padding:'8px 10px',textAlign:'left'}}>Engineer</th>
+                  <th style={{padding:'8px 10px',textAlign:'left'}}>Date</th>
+                  <th style={{padding:'8px 10px',textAlign:'center',width:90}}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visits.map((v,i)=>(
+                  <tr key={v.id} style={{background:i%2===0?'#fafafa':'white'}}>
+                    <td style={{padding:'7px 10px',color:'#888'}}>{i+1}</td>
+                    <td style={{padding:'7px 10px'}}>
+                      <div style={{fontWeight:500}}>{v.title}</div>
+                      {v.title_ar&&<div style={{fontSize:11,color:'#666'}}>{v.title_ar}</div>}
+                    </td>
+                    <td style={{padding:'7px 10px',color:'#666'}}>{v.engineer_name||'—'}</td>
+                    <td style={{padding:'7px 10px',color:'#666'}}>{v.scheduled_date||'—'}</td>
+                    <td style={{padding:'7px 10px',textAlign:'center',color:v.status==='completed'?'#0F6E56':v.status==='scheduled'?'#185FA5':'#888',fontWeight:500}}>
+                      {STATUS_LABELS[v.status]}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:40,marginTop:50}}>
+              <div style={{textAlign:'center'}}>
+                <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
+                  <div style={{fontSize:12}}>Client Signature — توقيع المالك</div>
+                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject.client_name||'—'}</div>
+                </div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={{borderTop:'1.5px solid #333',paddingTop:8,marginTop:40}}>
+                  <div style={{fontSize:12}}>Engineer Signature — توقيع المهندس</div>
+                  <div style={{fontSize:11,color:'#888',marginTop:2}}>{selectedProject.engineer_name||'—'}</div>
+                </div>
+              </div>
+            </div>
+            <div style={{borderTop:'1px solid #ddd',marginTop:32,paddingTop:12,textAlign:'center',fontSize:10,color:'#aaa'}}>
+              مكتب ركاز للهندسة · البحرين · {new Date().toLocaleDateString('en-GB')}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Visit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
@@ -296,14 +373,10 @@ export default function ProjectVisits() {
 
       {/* Header */}
       <div className="page-header">
-      <SectionHelp
-        title="Project Visits — خطة زيارات المشروع"
-        description="هنا تحدد قائمة الزيارات المطلوبة لكل مشروع من البداية للنهاية. كل زيارة لها اسم المهندس والتاريخ والوقت المجدول. هذي خطة العمل الكاملة للمشروع."
-        steps={['اختر المشروع', 'اضغط Load Default لتحميل القائمة القياسية', 'حدد المهندس والتاريخ لكل زيارة', 'غيّر الحالة عند إنجاز الزيارة']}
-        color="#185FA5" bg="#E6F1FB"
-      />
+
         <div><h3>Project Visits</h3><div className="page-sub">Track visits per project</div></div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {visits.length > 0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={printVisits}>🖨 Print</button>}
           <button className="btn btn-sm" onClick={() => setShowTemplateModal(true)}>⚙ Templates</button>
           <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Visit</button>
         </div>
