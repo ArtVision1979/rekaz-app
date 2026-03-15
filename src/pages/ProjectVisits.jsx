@@ -354,7 +354,7 @@ export default function ProjectVisits() {
                   <div className="progress-bar" style={{height:6}}><div className="progress-fill" style={{width:`${progress}%`}}/></div>
                   <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3,textAlign:'center'}}>{progress}%</div>
                 </div>
-                <div style={{display:'flex',gap:6'}}>
+                <div style={{display:'flex',gap:6}}>
                   {total===0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'+ Load Default'}</button>}
                   {total>0 && <button className="btn btn-sm" style={{color:'#854F0B',borderColor:'#854F0B'}} onClick={resetToDefault} disabled={saving}>↺ Reset</button>}
                   {total>0 && <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={deleteAllVisits}>🗑 Delete All</button>}
