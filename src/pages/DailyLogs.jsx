@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
 
 const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'', engineer_name:'' }
@@ -151,6 +152,12 @@ export default function DailyLogs() {
       )}
 
       <div className="page-header">
+      <SectionHelp
+        title="Daily Logs — السجل اليومي"
+        description="سجّل يومياً ما يحصل في الموقع — عدد العمال، الطقس، الأنشطة المنجزة، والمشاكل. هذا السجل مرجع مهم لتتبع سير العمل ويفيد في النزاعات."
+        steps={['اختر المشروع', 'اضغط New Log', 'سجّل عدد العمال والطقس', 'اكتب الأنشطة والمشاكل']}
+        color="#5F5E5A" bg="#F1EFE8"
+      />
         <div><h3>Daily Logs</h3><div className="page-sub">{logs.length} logs</div></div>
         <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Log</button>
       </div>

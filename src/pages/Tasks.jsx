@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SectionHelp from '../components/SectionHelp.jsx'
 import { getTasks, createTask, updateTask, getProjects, supabase } from '../lib/supabase.js'
 
 const EMPTY = { title: '', project_id: '', severity: 'medium', assigned_to: '', due_date: '', status: 'open', description: '' }
@@ -143,6 +144,12 @@ export default function Tasks() {
       )}
 
       <div className="page-header">
+      <SectionHelp
+        title="Tasks — المهام المعلقة"
+        description="أي مشكلة أو ملاحظة تحتاج متابعة تضيفها هنا كمهمة. حدد الأولوية والمسؤول وتاريخ التسليم. المهام المتأخرة تظهر باللون الأحمر في Dashboard."
+        steps={['اختر المشروع', 'اضغط New Task', 'حدد الأولوية والمسؤول', 'اضغط على المربع عند الإنجاز']}
+        color="#854F0B" bg="#FAEEDA"
+      />
         <div><h3>Tasks</h3><div className="page-sub">{openCount} open · {resolvedCount} resolved</div></div>
         <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Task</button>
       </div>

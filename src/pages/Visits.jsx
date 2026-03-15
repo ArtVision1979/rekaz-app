@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
 
 const SEV_COLOR = { low:'badge-blue', medium:'badge-progress', high:'badge-open', critical:'badge-open' }
@@ -148,6 +149,12 @@ export default function Visits() {
       )}
 
       <div className="page-header">
+      <SectionHelp
+        title="Site Visits — تقارير زيارات الموقع"
+        description="كل مرة تزور الموقع سجّل تقريراً هنا. اكتب ملاحظاتك وحدد درجة الخطورة. هذا التقرير يُرسل للعميل ويحفظ كسجل رسمي للمشروع."
+        steps={['اختر المشروع', 'اضغط New Visit', 'سجّل ملاحظاتك وحدد الخطورة', 'اطبع التقرير PDF من صفحة Reports']}
+        color="#0F6E56" bg="#E1F5EE"
+      />
         <div><h3>Site Visits</h3><div className="page-sub">{visits.length} visits · {draftCount} draft · {approvedCount} approved</div></div>
         <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Visit</button>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
 
 const EMPTY = { project_id:'', title:'', due_date:'', status:'pending' }
@@ -99,6 +100,12 @@ export default function Milestones() {
       )}
 
       <div className="page-header">
+      <SectionHelp
+        title="Milestones — المراحل الكبرى للمشروع"
+        description="المراحل الرئيسية في المشروع مثل انتهاء الأساس، الهيكل، التسليم. تظهر في Dashboard وتساعدك تتابع تقدم المشروع بشكل عام."
+        steps={['اضغط New Milestone', 'حدد اسم المرحلة والتاريخ', 'اضغط ✓ Done عند الإنجاز']}
+        color="#534AB7" bg="#EEEDFE"
+      />
         <div><h3>Milestones</h3><div className="page-sub">{milestones.filter(m=>m.status!=='completed').length} pending · {milestones.filter(m=>m.status==='completed').length} completed</div></div>
         <button className="btn btn-primary" onClick={openNew}>+ New Milestone</button>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SectionHelp from '../components/SectionHelp.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
@@ -269,6 +270,12 @@ export default function ProjectVisits() {
 
       {/* Header */}
       <div className="page-header">
+      <SectionHelp
+        title="Project Visits — خطة زيارات المشروع"
+        description="هنا تحدد قائمة الزيارات المطلوبة لكل مشروع من البداية للنهاية. كل زيارة لها اسم المهندس والتاريخ والوقت المجدول. هذي خطة العمل الكاملة للمشروع."
+        steps={['اختر المشروع', 'اضغط Load Default لتحميل القائمة القياسية', 'حدد المهندس والتاريخ لكل زيارة', 'غيّر الحالة عند إنجاز الزيارة']}
+        color="#185FA5" bg="#E6F1FB"
+      />
         <div><h3>Project Visits</h3><div className="page-sub">Track visits per project</div></div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           <button className="btn btn-sm" onClick={() => setShowTemplateModal(true)}>⚙ Templates</button>
