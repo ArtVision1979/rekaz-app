@@ -66,27 +66,151 @@ export default function Projects() {
     const printContent = document.getElementById('project-card-print')
     if (!printContent) return
     const w = window.open('', '_blank')
-    w.document.write(`
-      <html><head><title>Project Card - ${showCard?.name}</title>
+    const p = showCard
+    const pvList = projectVisits
+    const today = new Date().toLocaleDateString('en-GB')
+    const STATUS_C = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
+    const STATUS_L = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
+    const completedCount = pvList.filter(v=>v.status==='completed').length
+
+    w.document.write(`<!DOCTYPE html>
+      <html><head><meta charset="UTF-8"><title>Project Card - ${p?.name}</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 40px; color: #000; direction: rtl; }
-        * { box-sizing: border-box; }
-        img { height: 50px; width: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th { background: #185FA5; color: white; padding: 8px 10px; }
-        td { padding: 7px 10px; border-bottom: 0.5px solid #eee; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; padding: 36px; color: #111; font-size: 13px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #185FA5; padding-bottom: 16px; margin-bottom: 20px; }
+        .header-title { font-size: 20px; font-weight: 700; color: #185FA5; }
+        .header-sub { font-size: 12px; color: #888; margin-top: 4px; }
+        .section { border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
+        .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .section-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+        .section-title { font-size: 13px; font-weight: 700; }
+        .section-subtitle { font-size: 11px; color: #888; margin-top: 1px; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; }
+        .info-row { display: flex; flex-direction: column; gap: 2px; }
+        .info-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        .info-value { font-size: 13px; font-weight: 500; color: #111; }
+        .progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 4px; }
+        .progress-fill { height: 100%; background: #185FA5; border-radius: 3px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+        th { background: #185FA5; color: white; padding: 8px 12px; text-align: left; font-weight: 600; }
+        td { padding: 7px 12px; border-bottom: 0.5px solid #eee; vertical-align: middle; }
         tr:nth-child(even) td { background: #fafafa; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #185FA5; padding-bottom: 20px; margin-bottom: 24px; }
-        .section { border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-        .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
-        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 12px; }
-        .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 50px; }
-        .sig { text-align: center; }
-        .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 40px; font-size: 12px; }
-        .footer { border-top: 1px solid #ddd; margin-top: 32px; padding-top: 12px; text-align: center; font-size: 10px; color: #aaa; }
-        @media print { body { padding: 20px; } }
+        .status-badge { font-size: 11px; font-weight: 600; }
+        .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: 48px; }
+        .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 48px; text-align: center; font-size: 12px; }
+        .sig-name { font-size: 11px; color: #888; margin-top: 3px; }
+        .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; text-align: center; font-size: 10px; color: #bbb; }
       </style>
-      </head><body>${printContent.innerHTML}</body></html>
+      </head><body>
+
+      <div class="header">
+        <div>
+          <img src="/rekaz-logo.jpg" style="height:44px;width:auto;" onerror="this.style.display='none'"/>
+          <div style="font-size:11px;color:#888;margin-top:4px;">مكتب ركاز للهندسة</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="header-title">بطاقة المشروع</div>
+          <div class="header-sub">Project Card · ${today}</div>
+        </div>
+      </div>
+
+      <div class="section" style="background:#f5f5f0;">
+        <div class="section-header">
+          <div class="section-icon" style="background:#e0e8f5;">🏗️</div>
+          <div>
+            <div class="section-title">معلومات المشروع</div>
+            <div class="section-subtitle">Project Information</div>
+          </div>
+        </div>
+        <div class="info-grid">
+          <div class="info-row"><div class="info-label">اسم المشروع · Project Name</div><div class="info-value">${p?.name||'—'}</div></div>
+          <div class="info-row"><div class="info-label">رقم المشروع · Project No</div><div class="info-value">${p?.project_no||'—'}</div></div>
+          <div class="info-row"><div class="info-label">الموقع · Location</div><div class="info-value">${p?.location||'—'}</div></div>
+          <div class="info-row"><div class="info-label">تاريخ بداية الإشراف · Start Date</div><div class="info-value">${p?.supervision_start||'—'}</div></div>
+          <div class="info-row"><div class="info-label">الحالة · Status</div><div class="info-value">${p?.status||'—'}</div></div>
+          <div class="info-row">
+            <div class="info-label">نسبة الإنجاز · Progress</div>
+            <div class="info-value">${p?.progress||0}%</div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${p?.progress||0}%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+        <div class="section" style="background:#E6F1FB;">
+          <div class="section-header">
+            <div class="section-icon" style="background:#c8dff5;">👤</div>
+            <div>
+              <div class="section-title">معلومات المالك</div>
+              <div class="section-subtitle">Client Information</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.client_name||'—'}</div></div>
+            <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.client_phone||'—'}</div></div>
+          </div>
+        </div>
+        <div class="section" style="background:#E1F5EE;">
+          <div class="section-header">
+            <div class="section-icon" style="background:#b8e8d8;">👷</div>
+            <div>
+              <div class="section-title">المهندس المشرف</div>
+              <div class="section-subtitle">Supervising Engineer</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.engineer_name||'—'}</div></div>
+            <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.engineer_phone||'—'}</div></div>
+          </div>
+        </div>
+      </div>
+
+      ${pvList.length > 0 ? `
+      <div class="section" style="background:#fafafa;border:0.5px solid #eee;">
+        <div class="section-header">
+          <div class="section-icon" style="background:#e0e8f5;">📋</div>
+          <div>
+            <div class="section-title">قائمة الزيارات — Visits List</div>
+            <div class="section-subtitle">${completedCount} / ${pvList.length} مكتملة · completed</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th>الزيارة · Visit</th>
+              <th>المهندس · Engineer</th>
+              <th>التاريخ · Date</th>
+              <th style="width:90px;text-align:center;">الحالة · Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pvList.map((v,i) => `
+              <tr>
+                <td style="color:#888;">${i+1}</td>
+                <td>
+                  <div style="font-weight:500;${v.status==='completed'?'text-decoration:line-through;color:#888;':''}">${v.title}</div>
+                  ${v.title_ar ? `<div style="font-size:11px;color:#666;">${v.title_ar}</div>` : ''}
+                </td>
+                <td style="color:#666;">${v.engineer_name||'—'}</td>
+                <td style="color:#666;">${v.scheduled_date||'—'}</td>
+                <td style="text-align:center;color:${STATUS_C[v.status]||'#888'};font-weight:600;font-size:11px;">${STATUS_L[v.status]||v.status}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : ''}
+
+      <div class="sigs">
+        <div><div class="sig-line">توقيع المالك · Client Signature<div class="sig-name">${p?.client_name||'—'}</div></div></div>
+        <div><div class="sig-line">توقيع المهندس · Engineer Signature<div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
+      </div>
+
+      <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain · ${today}</div>
+
+      </body></html>
     `)
     w.document.close()
     w.focus()
