@@ -1,6 +1,38 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase } from '../lib/supabase.js'
 
+async function compressImage(file, maxSizeKB = 400) {
+  const imageTypes = ['image/jpeg','image/png','image/webp']
+  if (!imageTypes.includes(file.type)) return file
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let { width, height } = img
+        const MAX = 1600
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = height * MAX / width; width = MAX }
+          else { width = width * MAX / height; height = MAX }
+        }
+        canvas.width = width; canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        let quality = 0.85
+        const tryCompress = () => {
+          canvas.toBlob((blob) => {
+            if (blob.size / 1024 > maxSizeKB && quality > 0.3) { quality -= 0.1; tryCompress() }
+            else resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+          }, 'image/jpeg', quality)
+        }
+        tryCompress()
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function Drawings() {
   const [drawings, setDrawings] = useState([])
   const [projects, setProjects] = useState([])
@@ -31,7 +63,8 @@ export default function Drawings() {
     try {
       const ext = selectedFile.name.split('.').pop()
       const path = `drawings/${form.project_id}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, selectedFile)
+      const fileToUpload = await compressImage(selectedFile)
+      const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, fileToUpload)
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('Rekaz').getPublicUrl(path)
       await supabase.from('drawings').insert({ ...form, file_path: publicUrl })

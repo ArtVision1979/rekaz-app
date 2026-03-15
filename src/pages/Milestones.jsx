@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
+import SectionHelp from '../components/SectionHelp.jsx'
 
 const EMPTY = { project_id:'', title:'', due_date:'', status:'pending' }
 const STATUS_C = { pending:'badge-gray', in_progress:'badge-progress', completed:'badge-done', delayed:'badge-open' }
@@ -27,7 +27,11 @@ export default function Milestones() {
     } catch(e){ console.error(e) } finally { setLoading(false) }
   }
 
-  function openNew() { setEditItem(null); setForm(EMPTY); setShowModal(true) }
+  function openNew() {
+    setEditItem(null)
+    setForm(EMPTY)
+    setShowModal(true)
+  }
 
   function openEdit(m) {
     setEditItem(m)
@@ -100,19 +104,25 @@ export default function Milestones() {
       )}
 
       <div className="page-header">
+        <div><h3>Milestones</h3><div className="page-sub">{milestones.filter(m=>m.status!=='completed').length} pending · {milestones.filter(m=>m.status==='completed').length} completed</div></div>
+        <button className="btn btn-primary" onClick={openNew}>+ New Milestone</button>
+      </div>
+
       <SectionHelp
         title="Milestones — المراحل الكبرى للمشروع"
         description="المراحل الرئيسية في المشروع مثل انتهاء الأساس، الهيكل، التسليم. تظهر في Dashboard وتساعدك تتابع تقدم المشروع بشكل عام."
         steps={['اضغط New Milestone', 'حدد اسم المرحلة والتاريخ', 'اضغط ✓ Done عند الإنجاز']}
         color="#534AB7" bg="#EEEDFE"
       />
-        <div><h3>Milestones</h3><div className="page-sub">{milestones.filter(m=>m.status!=='completed').length} pending · {milestones.filter(m=>m.status==='completed').length} completed</div></div>
-        <button className="btn btn-primary" onClick={openNew}>+ New Milestone</button>
-      </div>
 
       <div className="card">
-        {loading ? <div style={{color:'#888',padding:16}}>Loading...</div> :
-          milestones.length === 0 ? <div className="empty"><p>No milestones yet.</p></div> : (
+        {loading ? <div style={{color:'var(--text-muted)',padding:16}}>Loading...</div> :
+          milestones.length === 0 ? (
+            <div className="empty">
+              <p>No milestones yet.</p>
+              <button className="btn btn-primary" style={{marginTop:12}} onClick={openNew}>+ New Milestone</button>
+            </div>
+          ) : (
             <table className="table">
               <thead><tr><th>Milestone</th><th>Project</th><th>Due Date</th><th>Status</th><th></th></tr></thead>
               <tbody>
@@ -121,11 +131,11 @@ export default function Milestones() {
                   return (
                     <tr key={m.id}>
                       <td>
-                        <div style={{fontWeight:500,textDecoration:m.status==='completed'?'line-through':'none',color:m.status==='completed'?'#888':'inherit'}}>{m.title}</div>
+                        <div style={{fontWeight:500,textDecoration:m.status==='completed'?'line-through':'none',color:m.status==='completed'?'var(--text-muted)':'var(--text)'}}>{m.title}</div>
                         {overdue && <div style={{fontSize:11,color:'#A32D2D',marginTop:2}}>Overdue!</div>}
                       </td>
-                      <td style={{color:'#888'}}>{m.projects?.name||'—'}</td>
-                      <td style={{color: overdue ? '#A32D2D' : '#888'}}>{m.due_date||'—'}</td>
+                      <td style={{color:'var(--text-muted)'}}>{m.projects?.name||'—'}</td>
+                      <td style={{color: overdue ? '#A32D2D' : 'var(--text-muted)'}}>{m.due_date||'—'}</td>
                       <td><span className={`badge ${STATUS_C[m.status]||'badge-gray'}`}>{m.status}</span></td>
                       <td><div style={{display:'flex',gap:6}}>
                         {m.status !== 'completed' && <button className="btn btn-sm" style={{color:'#0F6E56',borderColor:'#0F6E56'}} onClick={()=>markDone(m)}>✓ Done</button>}

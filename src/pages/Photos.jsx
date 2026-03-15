@@ -1,6 +1,49 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, getVisits, supabase } from '../lib/supabase.js'
 
+// Compress image before upload
+async function compressImage(file, maxSizeKB = 300) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let { width, height } = img
+        
+        // Max dimensions
+        const MAX = 1200
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = height * MAX / width; width = MAX }
+          else { width = width * MAX / height; height = MAX }
+        }
+        
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        
+        // Try different quality levels
+        let quality = 0.8
+        const tryCompress = () => {
+          canvas.toBlob((blob) => {
+            if (blob.size / 1024 > maxSizeKB && quality > 0.3) {
+              quality -= 0.1
+              tryCompress()
+            } else {
+              const compressed = new File([blob], file.name, { type: 'image/jpeg' })
+              resolve(compressed)
+            }
+          }, 'image/jpeg', quality)
+        }
+        tryCompress()
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function Photos() {
   const [photos, setPhotos] = useState([])
   const [visits, setVisits] = useState([])
@@ -42,9 +85,10 @@ export default function Photos() {
     if (!selectedFile || !form.visit_id) return
     setUploading(true)
     try {
-      const ext = selectedFile.name.split('.').pop()
-      const path = `visits/${form.visit_id}/photos/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, selectedFile)
+      // Compress image
+      const compressed = await compressImage(selectedFile)
+      const path = `visits/${form.visit_id}/photos/${Date.now()}.jpg`
+      const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, compressed)
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('Rekaz').getPublicUrl(path)
       await supabase.from('visit_photos').insert({ visit_id: form.visit_id, file_path: publicUrl, caption: form.caption })
