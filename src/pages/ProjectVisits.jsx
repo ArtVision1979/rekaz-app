@@ -36,6 +36,7 @@ export default function ProjectVisits() {
   const [saving, setSaving] = useState(false)
   const [notifPermission, setNotifPermission] = useState(Notification?.permission || 'default')
   const [notifIds, setNotifIds] = useState({})
+  const [projectSearch, setProjectSearch] = useState('')
   const [form, setForm] = useState({
     title: '', engineer_name: '', scheduled_date: '',
     scheduled_time: '', status: 'pending', notes: '', order_index: 0
@@ -271,9 +272,14 @@ export default function ProjectVisits() {
         </div>
       </div>
 
-      {/* Project Tabs */}
+      {/* Project Search + Tabs */}
+      <div style={{ marginBottom:10 }}>
+        <input className="form-input" style={{ maxWidth:260 }}
+          placeholder="Search projects..."
+          value={projectSearch} onChange={e => setProjectSearch(e.target.value)} />
+      </div>
       <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-        {projects.map(p => (
+        {projects.filter(p => p.name.toLowerCase().includes(projectSearch.toLowerCase()) || (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())).map(p => (
           <button key={p.id} className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
             style={{ fontSize:12 }} onClick={() => setSelectedProject(p)}>
             {p.name}
