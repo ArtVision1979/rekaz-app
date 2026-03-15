@@ -128,7 +128,7 @@ function PrintTemplate({ report }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #185FA5', paddingBottom: 20, marginBottom: 24 }}>
         <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: '#185FA5', letterSpacing: 1 }}>REKAZ</div>
+          <img src="/rekaz-logo.png" alt="Rekaz" style={{ height: 50, width: 'auto', borderRadius: 4 }} />
           <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>Engineering Office</div>
           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Bahrain · isatrading79@gmail.com</div>
         </div>

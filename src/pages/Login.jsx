@@ -27,12 +27,11 @@ export default function Login() {
     }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14, background: '#185FA5',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 14px', color: 'white', fontSize: 22, fontWeight: 700
-          }}>R</div>
-          <h1 style={{ fontSize: 20, fontWeight: 600 }}>Rekaz</h1>
+          <img
+            src="/rekaz-logo.png"
+            alt="Rekaz Engineering"
+            style={{ width: 180, height: 'auto', marginBottom: 12, borderRadius: 8 }}
+          />
           <p style={{ fontSize: 13, color: '#888', marginTop: 4 }}>Site Visit Manager</p>
         </div>
 
