@@ -40,7 +40,7 @@ export default function ProjectVisits() {
   const [notifIds, setNotifIds] = useState({})
   const [projectSearch, setProjectSearch] = useState('')
   const [form, setForm] = useState({
-    title: '', engineer_name: '', scheduled_date: '',
+    title: '', title_ar: '', engineer_name: '', scheduled_date: '',
     scheduled_time: '', status: 'pending', notes: '', order_index: 0
   })
   const [newTemplate, setNewTemplate] = useState('')
@@ -63,7 +63,9 @@ export default function ProjectVisits() {
       const allNames = [...new Set([...userNames, ...savedNames])]
       setEngineers(allNames)
       // Use DB templates or defaults
-      const tList = t?.length ? t.map(t => t.title) : DEFAULT_TEMPLATES
+      const tObjs = t?.length ? t : DEFAULT_TEMPLATES.map((title,i) => ({title, title_ar:'', order_index:i+1}))
+      setTemplateObjects(tObjs)
+      const tList = tObjs.map(t => t.title)
       setTemplates(tList)
       setEditTemplates(tList)
       if (p?.length) setSelectedProject(p[0])
@@ -102,9 +104,12 @@ export default function ProjectVisits() {
 
   async function addDefaultVisits() {
     if (!selectedProject) return
-    const toInsert = templates.map((title, i) => ({
+    const toInsert = templateObjects.map((t, i) => ({
       project_id: selectedProject.id,
-      title, order_index: i + 1, status: 'pending'
+      title: t.title,
+      title_ar: t.title_ar || '',
+      order_index: t.order_index || i + 1,
+      status: 'pending'
     }))
     await supabase.from('project_visits').insert(toInsert)
     await loadVisits(selectedProject.id)
@@ -112,13 +117,13 @@ export default function ProjectVisits() {
 
   function openNew() {
     setEditVisit(null)
-    setForm({ title: '', engineer_name: '', scheduled_date: '', scheduled_time: '', status: 'pending', notes: '', order_index: visits.length + 1 })
+    setForm({ title: '', title_ar: '', engineer_name: '', scheduled_date: '', scheduled_time: '', status: 'pending', notes: '', order_index: visits.length + 1 })
     setShowModal(true)
   }
 
   function openEdit(v) {
     setEditVisit(v)
-    setForm({ title: v.title, engineer_name: v.engineer_name || '', scheduled_date: v.scheduled_date || '', scheduled_time: v.scheduled_time || '', status: v.status, notes: v.notes || '', order_index: v.order_index })
+    setForm({ title: v.title, title_ar: v.title_ar || '', engineer_name: v.engineer_name || '', scheduled_date: v.scheduled_date || '', scheduled_time: v.scheduled_time || '', status: v.status, notes: v.notes || '', order_index: v.order_index })
     setShowModal(true)
   }
 
@@ -185,6 +190,12 @@ export default function ProjectVisits() {
                 <datalist id="visit-templates-list">
                   {templates.map((t, i) => <option key={i} value={t} />)}
                 </datalist>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Arabic Name — الاسم بالعربي</label>
+                <input className="form-input" value={form.title_ar}
+                  onChange={e => setForm(f => ({...f, title_ar: e.target.value}))}
+                  placeholder="مثال: معاينة الموقع" style={{fontFamily:'inherit'}} />
               </div>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
@@ -345,6 +356,7 @@ export default function ProjectVisits() {
                           <div style={{ fontWeight:500, textDecoration:v.status==='completed'?'line-through':'none', color:v.status==='completed'?'var(--text-muted)':'var(--text)' }}>
                             {notifIds[v.id] ? '🔔 ' : ''}{v.title}
                           </div>
+                          {v.title_ar && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{v.title_ar}</div>}
                           {v.notes && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{v.notes}</div>}
                         </td>
                         <td style={{ color:'var(--text-muted)', fontSize:12 }}>{v.engineer_name||'—'}</td>
