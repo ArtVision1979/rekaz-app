@@ -37,27 +37,26 @@ export function Reports() {
   }
 
   async function loadVisitData(visit) {
-    // Load checklist - try exact match first, then partial match
-    const visitType = visit.notes?.split(' — ')[0]?.trim() || ''
+    // Load all checklist items and find best match
+    const fullNotes = visit.notes?.trim() || ''
+    const shortType = visit.notes?.split(' — ')[0]?.trim() || ''
+    
+    const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
     
     let clData = null
-    // Try exact match first
-    const { data: exactMatch } = await supabase.from('inspection_checklists').select('*').eq('visit_type', visitType).order('order_index')
-    
-    if (exactMatch?.length) {
-      clData = exactMatch
-    } else {
-      // Try partial match - get all and find best match
-      const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
-      if (allItems?.length) {
-        const types = [...new Set(allItems.map(i => i.visit_type))]
-        const bestMatch = types.find(t => 
-          visitType.toLowerCase().includes(t.toLowerCase()) || 
-          t.toLowerCase().includes(visitType.toLowerCase())
-        )
-        if (bestMatch) {
-          clData = allItems.filter(i => i.visit_type === bestMatch)
-        }
+    if (allItems?.length) {
+      const types = [...new Set(allItems.map(i => i.visit_type))]
+      
+      // Try: 1) exact full match, 2) exact short match, 3) partial match
+      const bestMatch = 
+        types.find(t => t === fullNotes) ||
+        types.find(t => t === shortType) ||
+        types.find(t => fullNotes.toLowerCase().includes(t.toLowerCase())) ||
+        types.find(t => t.toLowerCase().includes(shortType.toLowerCase())) ||
+        types.find(t => shortType.toLowerCase().includes(t.split(' — ')[0]?.toLowerCase()))
+      
+      if (bestMatch) {
+        clData = allItems.filter(i => i.visit_type === bestMatch)
       }
     }
 
@@ -137,18 +136,23 @@ export function Reports() {
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:12px;">
             <thead><tr style="background:#185FA5;color:white;">
-              <th style="padding:7px 10px;text-align:left;">#</th>
+              <th style="padding:7px 10px;text-align:left;width:30px;">#</th>
               <th style="padding:7px 10px;text-align:left;">Item — البند</th>
-              <th style="padding:7px 10px;text-align:center;width:80px;">Result</th>
+              <th style="padding:7px 10px;text-align:center;width:90px;">Result — النتيجة</th>
             </tr></thead>
             <tbody>
               ${checklist.map((item, i) => {
                 const r = checklistResults[item.id]?.result || 'pending'
-                const color = r === 'pass' ? '#0F6E56' : r === 'fail' ? '#A32D2D' : '#888'
+                const itemNotes = checklistResults[item.id]?.notes || ''
+                const color = r === 'pass' ? '#0F6E56' : r === 'fail' ? '#A32D2D' : r === 'na' ? '#888' : '#aaa'
                 const label = r === 'pass' ? '✓ Pass' : r === 'fail' ? '✗ Fail' : r === 'na' ? '— N/A' : '○ Pending'
-                return `<tr style="background:${i%2===0?'#fafafa':'white'};">
+                const rowBg = r === 'fail' ? '#FFF5F5' : i%2===0 ? '#fafafa' : 'white'
+                return `<tr style="background:${rowBg};">
                   <td style="padding:6px 10px;color:#888;">${i+1}</td>
-                  <td style="padding:6px 10px;">${item.item}</td>
+                  <td style="padding:6px 10px;">
+                    <div>${item.item}</div>
+                    ${itemNotes ? `<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:4px;padding:2px 8px;margin-top:4px;display:inline-block;">💬 ${itemNotes}</div>` : ''}
+                  </td>
                   <td style="padding:6px 10px;text-align:center;color:${color};font-weight:600;">${label}</td>
                 </tr>`
               }).join('')}
