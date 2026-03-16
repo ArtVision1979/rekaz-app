@@ -179,7 +179,7 @@ export function Reports() {
           .sig-name { font-size: 11px; color: #888; margin-top: 3px; }
           .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; text-align: center; font-size: 10px; color: #bbb; }
           .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-          @media print { body { padding: 20px; } }
+          @media print { body { padding: 20px; } .no-print { display: none !important; } }
         </style>
         </head><body>
 
@@ -235,6 +235,10 @@ export function Reports() {
 
         <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · ${today} · ${reportNo}</div>
 
+        <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+          <button onclick="window.print()" style="background:#185FA5;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">🖨 Print</button>
+          <button onclick="window.close()" style="background:#f5f5f0;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;">✕ Close</button>
+        </div>
         </body></html>
       `)
       w.document.close()

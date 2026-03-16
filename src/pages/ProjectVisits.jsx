@@ -195,8 +195,16 @@ export default function ProjectVisits() {
         .sig { text-align: center; }
         .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 40px; font-size: 12px; }
         .footer { border-top: 1px solid #ddd; margin-top: 32px; padding-top: 12px; text-align: center; font-size: 10px; color: #aaa; }
+        .no-print { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 999; }
+        @media print { .no-print { display: none !important; } }
       </style>
-      </head><body>${printContent.innerHTML}</body></html>
+      </head><body>
+      <div class="no-print">
+        <button onclick="window.print()" style="background:#185FA5;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">🖨 Print</button>
+        <button onclick="window.close()" style="background:#f5f5f0;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;">✕ Close</button>
+      </div>
+      <div style="height:56px;"></div>
+      ${printContent.innerHTML}</body></html>
     `)
     w.document.close()
     w.focus()

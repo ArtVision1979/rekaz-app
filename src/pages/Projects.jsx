@@ -187,6 +187,12 @@ export default function Projects() {
         <div class="sig"><div class="sig-line"><div class="sig-role">توقيع المهندس · Engineer</div><div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
       </div>
 
+      <div style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;" class="no-print">
+        <button onclick="window.print()" style="background:#185FA5;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">🖨 Print / PDF</button>
+        <button onclick="window.close()" style="background:#f5f5f0;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;">✕ Close</button>
+      </div>
+      <div style="height:56px;" class="no-print"></div>
+
       <div class="footer">
         <span>مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain</span>
         <span>${today} · ${p?.project_no||'—'}</span>
