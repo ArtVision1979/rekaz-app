@@ -511,62 +511,93 @@ export default function Projects() {
         }
       </div>
 
-      {/* Project Card Modal */}
+      {/* Project Card - Full Page on Mobile */}
       {showCard && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowCard(null)}>
-          <div className="modal" style={{maxWidth:640}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <h3 style={{margin:0}}>Project Card — {showCard.name}</h3>
-              <div style={{display:'flex',gap:8}}>
-                <button className="btn btn-primary btn-sm" onClick={printCard}>🖨 Print / PDF</button>
-                <button className="btn btn-sm" onClick={()=>setShowCard(null)}>Close</button>
+        <div style={{position:'fixed',inset:0,background:'var(--bg-card)',zIndex:1000,overflowY:'auto'}}>
+          {/* Sticky header */}
+          <div style={{position:'sticky',top:0,background:'var(--bg-card)',borderBottom:'0.5px solid var(--border)',padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',zIndex:10}}>
+            <button className="btn btn-sm" onClick={()=>setShowCard(null)} style={{display:'flex',alignItems:'center',gap:6}}>
+              ← Back
+            </button>
+            <span style={{fontSize:13,fontWeight:550,color:'var(--text)'}}>{showCard.name}</span>
+            <button className="btn btn-primary btn-sm" onClick={printCard}>🖨 Print</button>
+          </div>
+
+          {/* Card content */}
+          <div style={{padding:16,maxWidth:640,margin:'0 auto'}}>
+            {/* Project info */}
+            <div style={{background:'var(--bg)',borderRadius:10,padding:14,marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#185FA5',marginBottom:10,textTransform:'uppercase'}}>معلومات المشروع</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',fontSize:13}}>
+                <div><div style={{fontSize:10,color:'var(--text-muted)'}}>اسم المشروع</div><div style={{fontWeight:550}}>{showCard.name}</div></div>
+                <div><div style={{fontSize:10,color:'var(--text-muted)'}}>رقم المشروع</div><div style={{fontWeight:550}}>{showCard.project_no}</div></div>
+                <div><div style={{fontSize:10,color:'var(--text-muted)'}}>الموقع</div><div>{showCard.location||'—'}</div></div>
+                <div><div style={{fontSize:10,color:'var(--text-muted)'}}>بداية الإشراف</div><div>{showCard.supervision_start||'—'}</div></div>
+              </div>
+              <div style={{marginTop:10}}>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:4}}>نسبة الإنجاز</div>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <div className="progress-bar" style={{flex:1,height:8}}>
+                    <div className="progress-fill" style={{width:`${showCard.progress||0}%`}}/>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:600,color:'#185FA5'}}>{showCard.progress||0}%</span>
+                </div>
               </div>
             </div>
 
-            <div style={{background:'#f5f5f0',borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:500,color:'#185FA5',marginBottom:8}}>PROJECT INFO</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 16px',fontSize:13}}>
-                <div><span style={{color:'var(--text-muted)'}}>Name: </span>{showCard.name}</div>
-                <div><span style={{color:'var(--text-muted)'}}>No: </span>{showCard.project_no}</div>
-                <div><span style={{color:'var(--text-muted)'}}>Location: </span>{showCard.location||'—'}</div>
-                <div><span style={{color:'var(--text-muted)'}}>Start: </span>{showCard.supervision_start||'—'}</div>
-              </div>
+            {/* People */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr',gap:10,marginBottom:12}}>
+              {[
+                {label:'المالك · Client', name:showCard.client_name, phone:showCard.client_phone, color:'#185FA5', bg:'#E6F1FB'},
+                {label:'المهندس المشرف · Engineer', name:showCard.engineer_name, phone:showCard.engineer_phone, color:'#0F6E56', bg:'#E1F5EE'},
+                {label:'المقاول · Contractor', name:showCard.contractor_name, phone:showCard.contractor_phone, color:'#854F0B', bg:'#FDF0DC'},
+              ].map(p=>(
+                <div key={p.label} style={{background:p.bg,borderRadius:10,padding:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:10,fontWeight:600,color:p.color,marginBottom:4,textTransform:'uppercase'}}>{p.label}</div>
+                    <div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>{p.name||'—'}</div>
+                  </div>
+                  {p.phone && (
+                    <a href={`tel:${p.phone}`} style={{fontSize:13,color:p.color,fontWeight:500,textDecoration:'none',background:'white',padding:'6px 12px',borderRadius:20}}>
+                      📞 {p.phone}
+                    </a>
+                  )}
+                </div>
+              ))}
             </div>
 
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <div style={{background:'#E6F1FB',borderRadius:8,padding:12}}>
-                <div style={{fontSize:11,fontWeight:500,color:'#185FA5',marginBottom:6}}>CLIENT — المالك</div>
-                <div style={{fontSize:13,fontWeight:500}}>{showCard.client_name||'—'}</div>
-                <div style={{fontSize:12,color:'#555'}}>{showCard.client_phone||'—'}</div>
-              </div>
-              <div style={{background:'#E1F5EE',borderRadius:8,padding:12}}>
-                <div style={{fontSize:11,fontWeight:500,color:'#0F6E56',marginBottom:6}}>ENGINEER — المهندس</div>
-                <div style={{fontSize:13,fontWeight:500}}>{showCard.engineer_name||'—'}</div>
-                <div style={{fontSize:12,color:'#555'}}>{showCard.engineer_phone||'—'}</div>
-              </div>
-            </div>
-
+            {/* Visits */}
             {projectVisits.length > 0 && (
               <div>
-                <div style={{fontSize:11,fontWeight:500,color:'var(--text-muted)',marginBottom:8}}>
-                  VISITS — الزيارات ({projectVisits.filter(v=>v.status==='completed').length}/{projectVisits.length} completed)
+                <div style={{fontSize:11,fontWeight:600,color:'var(--text-muted)',marginBottom:10,textTransform:'uppercase'}}>
+                  الزيارات ({projectVisits.filter(v=>v.status==='completed').length}/{projectVisits.length} مكتملة)
                 </div>
-                <div style={{maxHeight:220,overflowY:'auto'}}>
-                  {projectVisits.map((v,i)=>(
-                    <div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 0',borderBottom:'0.5px solid var(--border)'}}>
-                      <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:12,fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none'}}>{v.title}</div>
-                        {v.title_ar&&<div style={{fontSize:11,color:'var(--text-muted)'}}>{v.title_ar}</div>}
-                      </div>
-                      <div style={{fontSize:11,color:'var(--text-muted)'}}>{v.engineer_name||'—'}</div>
-                      <div style={{fontSize:11,color:'var(--text-muted)'}}>{v.scheduled_date||'—'}</div>
-                      <span style={{fontSize:10,color:STATUS_C2[v.status],fontWeight:500}}>{STATUS_LABELS[v.status]||v.status}</span>
+                {projectVisits.map((v,i)=>(
+                  <div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'0.5px solid var(--border)'}}>
+                    <span style={{fontSize:11,color:'var(--text-muted)',width:24,flexShrink:0,textAlign:'center'}}>{i+1}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
+                      {v.title_ar&&<div style={{fontSize:11,color:'var(--text-muted)'}}>{v.title_ar}</div>}
+                      {v.engineer_name&&<div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>👷 {v.engineer_name}</div>}
                     </div>
-                  ))}
-                </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:11,color:'var(--text-muted)'}}>{v.scheduled_date||'—'}</div>
+                      <span style={{fontSize:10,color:STATUS_C2[v.status],fontWeight:600}}>{STATUS_LABELS[v.status]||v.status}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* Print button at bottom */}
+            <div style={{marginTop:24,marginBottom:32}}>
+              <button className="btn btn-primary" style={{width:'100%',padding:14,fontSize:15}} onClick={printCard}>
+                🖨 Print / Save as PDF
+              </button>
+              <button className="btn" style={{width:'100%',padding:12,fontSize:14,marginTop:8}} onClick={()=>setShowCard(null)}>
+                ← Back to Projects
+              </button>
+            </div>
           </div>
         </div>
       )}
