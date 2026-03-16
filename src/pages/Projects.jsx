@@ -90,153 +90,107 @@ export default function Projects() {
       <html><head><meta charset="UTF-8"><title>Project Card - ${p?.name}</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; padding: 36px; color: #111; font-size: 13px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #185FA5; padding-bottom: 16px; margin-bottom: 20px; }
-        .header-title { font-size: 20px; font-weight: 700; color: #185FA5; }
-        .header-sub { font-size: 12px; color: #888; margin-top: 4px; }
-        .section { border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
-        .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .section-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
-        .section-title { font-size: 13px; font-weight: 700; }
-        .section-subtitle { font-size: 11px; color: #888; margin-top: 1px; }
-        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; }
-        .info-row { display: flex; flex-direction: column; gap: 2px; }
-        .info-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-        .info-value { font-size: 13px; font-weight: 500; color: #111; }
-        .progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 4px; }
-        .progress-fill { height: 100%; background: #185FA5; border-radius: 3px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
-        th { background: #185FA5; color: white; padding: 8px 12px; text-align: left; font-weight: 600; }
-        td { padding: 7px 12px; border-bottom: 0.5px solid #eee; vertical-align: middle; }
-        tr:nth-child(even) td { background: #fafafa; }
-        .status-badge { font-size: 11px; font-weight: 600; }
-        .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-top: 48px; }
-        .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 48px; text-align: center; font-size: 12px; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1a1a1a; font-size: 13px; background: white; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 3px solid #185FA5; }
+        .header-right { text-align: right; }
+        .header-title { font-size: 22px; font-weight: 700; color: #185FA5; }
+        .header-no { font-size: 11px; color: #185FA5; background: #E8F1FB; padding: 3px 10px; border-radius: 20px; display: inline-block; margin-top: 6px; }
+        .section-bar { font-size: 11px; font-weight: 700; color: white; padding: 8px 14px; text-transform: uppercase; letter-spacing: 1px; border-radius: 6px 6px 0 0; margin-bottom: 0; }
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .info-table td { padding: 10px 14px; border: 0.5px solid #e8e8e8; font-size: 13px; vertical-align: middle; }
+        .info-table .label { background: #f8f8f6; color: #555; font-weight: 600; font-size: 11px; width: 38%; }
+        .info-table .value { color: #1a1a1a; font-weight: 500; }
+        .progress-bar { height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #185FA5, #4a9eff); border-radius: 4px; }
+        .people-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .person-card { border: 0.5px solid #e8e8e8; border-radius: 8px; overflow: hidden; }
+        .person-role { font-size: 10px; color: white; padding: 6px 14px; display: block; font-weight: 700; letter-spacing: 0.5px; }
+        .person-name { font-size: 14px; font-weight: 700; color: #1a1a1a; padding: 10px 14px 4px; }
+        .person-phone { font-size: 12px; color: #666; padding: 0 14px 12px; }
+        table.visits { width: 100%; border-collapse: collapse; font-size: 12px; }
+        table.visits th { background: #185FA5; color: white; padding: 9px 12px; text-align: left; font-weight: 600; font-size: 11px; }
+        table.visits td { padding: 8px 12px; border-bottom: 0.5px solid #eee; vertical-align: middle; }
+        table.visits tr:nth-child(even) td { background: #fafafa; }
+        .sigs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 40px; margin-top: 52px; }
+        .sig-line { border-top: 1.5px solid #333; padding-top: 10px; margin-top: 52px; text-align: center; }
+        .sig-role { font-size: 11px; font-weight: 700; color: #1a1a1a; }
         .sig-name { font-size: 11px; color: #888; margin-top: 3px; }
-        .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; text-align: center; font-size: 10px; color: #bbb; }
-      </style>
-      </head><body>
+        .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10px; color: #bbb; }
+      </style></head><body>
 
       <div class="header">
         <div>
-          <img src="/rekaz-logo.jpg" style="height:44px;width:auto;" onerror="this.style.display='none'"/>
-          <div style="font-size:11px;color:#888;margin-top:4px;">مكتب ركاز للهندسة</div>
+          <img src="/rekaz-logo.jpg" style="height:50px;width:auto;border-radius:6px;" onerror="this.style.display='none'"/>
+          <div style="font-size:11px;color:#888;margin-top:6px;">مكتب ركاز للهندسة · Rekaz Engineering Office</div>
         </div>
-        <div style="text-align:right;">
-          <div class="header-title">بطاقة المشروع</div>
-          <div class="header-sub">Project Card · ${today}</div>
-        </div>
-      </div>
-
-      <div class="section" style="background:#f5f5f0;">
-        <div class="section-header">
-          <div class="section-icon" style="background:#e0e8f5;">🏗️</div>
-          <div>
-            <div class="section-title">معلومات المشروع</div>
-            <div class="section-subtitle">Project Information</div>
-          </div>
-        </div>
-        <div class="info-grid">
-          <div class="info-row"><div class="info-label">اسم المشروع · Project Name</div><div class="info-value">${p?.name||'—'}</div></div>
-          <div class="info-row"><div class="info-label">رقم المشروع · Project No</div><div class="info-value">${p?.project_no||'—'}</div></div>
-          <div class="info-row"><div class="info-label">الموقع · Location</div><div class="info-value">${p?.location||'—'}</div></div>
-          <div class="info-row"><div class="info-label">تاريخ بداية الإشراف · Start Date</div><div class="info-value">${p?.supervision_start||'—'}</div></div>
-          <div class="info-row"><div class="info-label">الحالة · Status</div><div class="info-value">${p?.status||'—'}</div></div>
-          <div class="info-row">
-            <div class="info-label">نسبة الإنجاز · Progress</div>
-            <div class="info-value">${p?.progress||0}%</div>
-            <div class="progress-bar"><div class="progress-fill" style="width:${p?.progress||0}%"></div></div>
-          </div>
+        <div class="header-right">
+          <div class="header-title">بطاقة المشروع · Project Card</div>
+          <div class="header-no">${p?.project_no||'—'} · ${today}</div>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-        <div class="section" style="background:#E6F1FB;">
-          <div class="section-header">
-            <div class="section-icon" style="background:#c8dff5;">👤</div>
-            <div>
-              <div class="section-title">معلومات المالك</div>
-              <div class="section-subtitle">Client Information</div>
-            </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.client_name||'—'}</div></div>
-            <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.client_phone||'—'}</div></div>
-          </div>
-        </div>
-        <div class="section" style="background:#E1F5EE;">
-          <div class="section-header">
-            <div class="section-icon" style="background:#b8e8d8;">👷</div>
-            <div>
-              <div class="section-title">المهندس المشرف</div>
-              <div class="section-subtitle">Supervising Engineer</div>
-            </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.engineer_name||'—'}</div></div>
-            <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.engineer_phone||'—'}</div></div>
-          </div>
-        </div>
-      </div>
+      <div class="section-bar" style="background:#185FA5;">معلومات المشروع · Project Information</div>
+      <table class="info-table">
+        <tr><td class="label">اسم المشروع · Project Name</td><td class="value" style="font-size:15px;font-weight:700;">${p?.name||'—'}</td></tr>
+        <tr><td class="label">الموقع · Location</td><td class="value">${p?.location||'—'}</td></tr>
+        <tr><td class="label">تاريخ بداية الإشراف · Start Date</td><td class="value">${p?.supervision_start||'—'}</td></tr>
+        <tr><td class="label">الحالة · Status</td><td class="value"><span style="background:${p?.status==='active'?'#E1F5EE':'#f5f5f0'};color:${p?.status==='active'?'#0F6E56':'#666'};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">${p?.status==='active'?'نشط · Active':p?.status==='completed'?'منتهي · Completed':p?.status==='on_hold'?'متوقف · On Hold':'ملغي · Cancelled'}</span></td></tr>
+        <tr><td class="label">نسبة الإنجاز · Progress</td><td class="value"><div style="display:flex;align-items:center;gap:12px;"><div style="flex:1;"><div class="progress-bar"><div class="progress-fill" style="width:${p?.progress||0}%"></div></div></div><span style="font-weight:700;color:#185FA5;">${p?.progress||0}%</span></div></td></tr>
+      </table>
 
-      <div class="section" style="background:#FFF3E0;margin-bottom:14px;">
-        <div class="section-header">
-          <div class="section-icon" style="background:#FFE0B2;">🔨</div>
-          <div>
-            <div class="section-title">معلومات المقاول</div>
-            <div class="section-subtitle">Contractor Information</div>
-          </div>
+      <div class="section-bar" style="background:#0F6E56;margin-bottom:12px;">أطراف المشروع · Project Parties</div>
+      <div class="people-grid">
+        <div class="person-card">
+          <div class="person-role" style="background:#185FA5;">المالك · Client</div>
+          <div class="person-name">${p?.client_name||'—'}</div>
+          <div class="person-phone">${p?.client_phone||'—'}</div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;">
-          <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.contractor_name||'—'}</div></div>
-          <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.contractor_phone||'—'}</div></div>
+        <div class="person-card">
+          <div class="person-role" style="background:#0F6E56;">المهندس المشرف · Engineer</div>
+          <div class="person-name">${p?.engineer_name||'—'}</div>
+          <div class="person-phone">${p?.engineer_phone||'—'}</div>
+        </div>
+        <div class="person-card">
+          <div class="person-role" style="background:#854F0B;">المقاول · Contractor</div>
+          <div class="person-name">${p?.contractor_name||'—'}</div>
+          <div class="person-phone">${p?.contractor_phone||'—'}</div>
         </div>
       </div>
 
       ${pvList.length > 0 ? `
-      <div class="section" style="background:#fafafa;border:0.5px solid #eee;">
-        <div class="section-header">
-          <div class="section-icon" style="background:#e0e8f5;">📋</div>
-          <div>
-            <div class="section-title">قائمة الزيارات — Visits List</div>
-            <div class="section-subtitle">${completedCount} / ${pvList.length} مكتملة · completed</div>
-          </div>
-        </div>
-        <table>
-          <thead>
+      <div class="section-bar" style="background:#185FA5;margin-bottom:0;">قائمة الزيارات · Visits List — ${completedCount}/${pvList.length} مكتملة</div>
+      <table class="visits">
+        <thead><tr>
+          <th style="width:32px">#</th>
+          <th>الزيارة · Visit</th>
+          <th>المهندس · Engineer</th>
+          <th>التاريخ · Date</th>
+          <th style="width:100px;text-align:center;">الحالة · Status</th>
+        </tr></thead>
+        <tbody>
+          ${pvList.map((v,i) => `
             <tr>
-              <th style="width:32px">#</th>
-              <th>الزيارة · Visit</th>
-              <th>المهندس · Engineer</th>
-              <th>التاريخ · Date</th>
-              <th style="width:90px;text-align:center;">الحالة · Status</th>
+              <td style="color:#888;">${i+1}</td>
+              <td><div style="font-weight:600;${v.status==='completed'?'text-decoration:line-through;color:#888;':''}">${v.title}</div>${v.title_ar?`<div style="font-size:11px;color:#666;">${v.title_ar}</div>`:''}</td>
+              <td style="color:#555;">${v.engineer_name||'—'}</td>
+              <td style="color:#555;">${v.scheduled_date||'—'}</td>
+              <td style="text-align:center;color:${STATUS_C[v.status]||'#888'};font-weight:700;font-size:11px;">${STATUS_L[v.status]||v.status}</td>
             </tr>
-          </thead>
-          <tbody>
-            ${pvList.map((v,i) => `
-              <tr>
-                <td style="color:#888;">${i+1}</td>
-                <td>
-                  <div style="font-weight:500;${v.status==='completed'?'text-decoration:line-through;color:#888;':''}">${v.title}</div>
-                  ${v.title_ar ? `<div style="font-size:11px;color:#666;">${v.title_ar}</div>` : ''}
-                </td>
-                <td style="color:#666;">${v.engineer_name||'—'}</td>
-                <td style="color:#666;">${v.scheduled_date||'—'}</td>
-                <td style="text-align:center;color:${STATUS_C[v.status]||'#888'};font-weight:600;font-size:11px;">${STATUS_L[v.status]||v.status}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
+          `).join('')}
+        </tbody>
+      </table>
       ` : ''}
 
-      <div class="sigs" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
-        <div><div class="sig-line">توقيع المالك · Client<div class="sig-name">${p?.client_name||'—'}</div></div></div>
-        <div><div class="sig-line">توقيع المقاول · Contractor<div class="sig-name">${p?.contractor_name||'—'}</div></div></div>
-        <div><div class="sig-line">توقيع المهندس · Engineer<div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
+      <div class="sigs">
+        <div class="sig"><div class="sig-line"><div class="sig-role">توقيع المالك · Client</div><div class="sig-name">${p?.client_name||'—'}</div></div></div>
+        <div class="sig"><div class="sig-line"><div class="sig-role">توقيع المقاول · Contractor</div><div class="sig-name">${p?.contractor_name||'—'}</div></div></div>
+        <div class="sig"><div class="sig-line"><div class="sig-role">توقيع المهندس · Engineer</div><div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
       </div>
 
-      <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain · ${today}</div>
+      <div class="footer">
+        <span>مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain</span>
+        <span>${today} · ${p?.project_no||'—'}</span>
+      </div>
 
       </body></html>
     `)
