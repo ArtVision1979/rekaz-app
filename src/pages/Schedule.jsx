@@ -205,7 +205,7 @@ export default function Schedule() {
                   <td style={{padding:'8px 10px',color:'#888',fontSize:11,borderBottom:'0.5px solid rgba(0,0,0,0.05)'}}>{time}</td>
                   {weekDates.map((d,di) => {
                     const dateStr = d.toISOString().split('T')[0]
-                    const items = schedule.filter(s => s.scheduled_date === dateStr && (s.scheduled_time||'').startsWith(time))
+                    const items = schedule.filter(s => s.scheduled_date === dateStr && (s.scheduled_time||'09:00').slice(0,2) === time.slice(0,2))
                     return (
                       <td key={di} style={{padding:'4px 4px',borderBottom:'0.5px solid rgba(0,0,0,0.05)',verticalAlign:'top',minHeight:36}}>
                         {items.map(item => {
