@@ -58,9 +58,21 @@ export default function Projects() {
   }
 
   async function handleDelete(p) {
-    if (!confirm(`Delete "${p.name}"?`)) return
-    await supabase.from('projects').delete().eq('id', p.id)
-    await load()
+    if (!confirm(`Delete "${p.name}"?\nThis will delete all related visits, tasks, and data.`)) return
+    try {
+      // Delete all related data first
+      await supabase.from('project_visits').delete().eq('project_id', p.id)
+      await supabase.from('site_visits').delete().eq('project_id', p.id)
+      await supabase.from('tasks').delete().eq('project_id', p.id)
+      await supabase.from('milestones').delete().eq('project_id', p.id)
+      await supabase.from('daily_logs').delete().eq('project_id', p.id)
+      await supabase.from('drawings').delete().eq('project_id', p.id)
+      await supabase.from('schedule_visits').delete().eq('project_id', p.id)
+      await supabase.from('reports').delete().eq('project_id', p.id)
+      // Finally delete the project
+      await supabase.from('projects').delete().eq('id', p.id)
+      await load()
+    } catch(e) { alert('Error: ' + e.message) }
   }
 
   function printCard() {

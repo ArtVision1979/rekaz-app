@@ -148,9 +148,7 @@ export default function ProjectVisits() {
       const visitDate = v.scheduled_date || today
       const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title + (v.title_ar ? ' — ' + v.title_ar : '')).maybeSingle()
       if (!existing) {
-        const createSiteVisit = confirm('✅ Visit marked as completed.
-
-Create a Site Visit report for this visit?')
+        const createSiteVisit = confirm('Create a Site Visit report for: ' + v.title + '?')
         if (createSiteVisit) {
           await supabase.from('site_visits').insert({
             project_id: v.project_id,
