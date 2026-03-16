@@ -37,16 +37,36 @@ export function Reports() {
   }
 
   async function loadVisitData(visit) {
-    // Load checklist based on visit notes (which contains visit type)
-    const visitType = visit.notes?.split(' — ')[0] || ''
+    // Load checklist - try exact match first, then partial match
+    const visitType = visit.notes?.split(' — ')[0]?.trim() || ''
     
-    const [{ data: cl }, { data: results }, { data: ph }] = await Promise.all([
-      supabase.from('inspection_checklists').select('*').eq('visit_type', visitType).order('order_index'),
+    let clData = null
+    // Try exact match first
+    const { data: exactMatch } = await supabase.from('inspection_checklists').select('*').eq('visit_type', visitType).order('order_index')
+    
+    if (exactMatch?.length) {
+      clData = exactMatch
+    } else {
+      // Try partial match - get all and find best match
+      const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
+      if (allItems?.length) {
+        const types = [...new Set(allItems.map(i => i.visit_type))]
+        const bestMatch = types.find(t => 
+          visitType.toLowerCase().includes(t.toLowerCase()) || 
+          t.toLowerCase().includes(visitType.toLowerCase())
+        )
+        if (bestMatch) {
+          clData = allItems.filter(i => i.visit_type === bestMatch)
+        }
+      }
+    }
+
+    const [{ data: results }, { data: ph }] = await Promise.all([
       supabase.from('visit_checklist_results').select('*').eq('visit_id', visit.id),
       supabase.from('visit_photos').select('*').eq('visit_id', visit.id)
     ])
 
-    setChecklist(cl || [])
+    setChecklist(clData || [])
     setNotes(visit.notes || '')
 
     // Map results
