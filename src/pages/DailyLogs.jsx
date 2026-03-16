@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
+import { useEngineers } from '../hooks/useEngineers.js'
 
 const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'', engineer_name:'' }
 const WEATHER = ['Sunny','Cloudy','Partly Cloudy','Rainy','Windy','Hot','Dusty']
+
+function EngineerSelect({ value, onChange }) {
+  const engineers = useEngineers()
+  return (
+    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">Select engineer...</option>
+      {engineers.map(e => (
+        <option key={e.id} value={e.full_name || e.email}>{e.full_name || e.email}</option>
+      ))}
+    </select>
+  )
+}
 
 export default function DailyLogs() {
   const [projects, setProjects] = useState([])
@@ -15,21 +28,15 @@ export default function DailyLogs() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
-  const [engineers, setEngineers] = useState([])
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadLogs(selectedProject.id) }, [selectedProject])
 
   async function loadProjects() {
     try {
-      const [p, { data: u }] = await Promise.all([
-        getProjects(),
-        supabase.from('users').select('*')
-      ])
+      const p = await getProjects()
       setProjects(p || [])
-      const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-      const userNames = (u||[]).map(u => u.full_name||u.email).filter(Boolean)
-      setEngineers([...new Set([...userNames, ...saved])])
+
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
@@ -69,13 +76,7 @@ export default function DailyLogs() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (form.engineer_name) {
-        const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-        if (!saved.includes(form.engineer_name)) {
-          saved.push(form.engineer_name)
-          localStorage.setItem('rekaz-engineers', JSON.stringify(saved))
-        }
-      }
+
       const data = { ...form, workers_count: form.workers_count ? parseInt(form.workers_count) : null }
       if (editLog) { await supabase.from('daily_logs').update(data).eq('id', editLog.id) }
       else { await supabase.from('daily_logs').insert(data) }
@@ -104,12 +105,7 @@ export default function DailyLogs() {
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <input className="form-input" value={form.engineer_name}
-                  onChange={e=>setForm(f=>({...f,engineer_name:e.target.value}))}
-                  list="engineers-list" placeholder="Type or select..."/>
-                <datalist id="engineers-list">
-                  {engineers.map((e,i) => <option key={i} value={e}/>)}
-                </datalist>
+                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">

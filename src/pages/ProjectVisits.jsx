@@ -1,16 +1,30 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useEngineers } from '../hooks/useEngineers.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
 const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
 
+function EngineerSelect({ value, onChange, placeholder = 'Select engineer...' }) {
+  const engineers = useEngineers()
+  return (
+    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">{placeholder}</option>
+      {engineers.map(e => (
+        <option key={e.id} value={e.full_name || e.email}>
+          {e.full_name || e.email}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 export default function ProjectVisits() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
   const [visits, setVisits] = useState([])
-  const [engineers, setEngineers] = useState([])
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -30,15 +44,12 @@ export default function ProjectVisits() {
 
   async function loadInitial() {
     try {
-      const [{ data: p }, { data: u }, { data: t }] = await Promise.all([
+      const [{ data: p }, { data: t }] = await Promise.all([
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
-        supabase.from('users').select('*'),
         supabase.from('visit_templates').select('*').order('order_index')
       ])
       setProjects(p || [])
-      const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-      const userNames = (u||[]).map(u => u.full_name||u.email).filter(Boolean)
-      setEngineers([...new Set([...userNames, ...saved])])
+
       setTemplates(t || [])
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
@@ -94,15 +105,7 @@ export default function ProjectVisits() {
     setVisits([])
   }
 
-  function saveEngineerName(name) {
-    if (!name) return
-    const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-    if (!saved.includes(name)) {
-      saved.push(name)
-      localStorage.setItem('rekaz-engineers', JSON.stringify(saved))
-      setEngineers(prev => [...new Set([...prev, name])])
-    }
-  }
+
 
   function openNew() {
     setEditVisit(null)
@@ -125,7 +128,6 @@ export default function ProjectVisits() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      saveEngineerName(form.engineer_name)
       const data = { ...form, project_id: selectedProject.id }
       if (editVisit) { await supabase.from('project_visits').update(data).eq('id', editVisit.id) }
       else { await supabase.from('project_visits').insert(data) }
@@ -280,8 +282,7 @@ export default function ProjectVisits() {
               </div>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <input className="form-input" value={form.engineer_name} onChange={e=>setForm(f=>({...f,engineer_name:e.target.value}))} list="englist" placeholder="Type or select..."/>
-                <datalist id="englist">{engineers.map((e,i)=><option key={i} value={e}/>)}</datalist>
+                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">

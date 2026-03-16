@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
+import { useEngineers } from '../hooks/useEngineers.js'
 
 const SEV_COLOR = { low:'badge-blue', medium:'badge-progress', high:'badge-open', critical:'badge-open' }
 const EMPTY = { project_id:'', visit_date: new Date().toISOString().split('T')[0], notes:'', severity:'low', status:'draft', engineer_name:'' }
+
+function EngineerSelect({ value, onChange }) {
+  const engineers = useEngineers()
+  return (
+    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">Select engineer...</option>
+      {engineers.map(e => (
+        <option key={e.id} value={e.full_name || e.email}>{e.full_name || e.email}</option>
+      ))}
+    </select>
+  )
+}
 
 export default function Visits() {
   const [projects, setProjects] = useState([])
@@ -15,7 +28,6 @@ export default function Visits() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
-  const [engineers, setEngineers] = useState([])
   const [showChecklist, setShowChecklist] = useState(null)
   const [checklist, setChecklist] = useState([])
   const [checklistResults, setChecklistResults] = useState({})
@@ -27,14 +39,9 @@ export default function Visits() {
 
   async function loadProjects() {
     try {
-      const [p, { data: u }] = await Promise.all([
-        getProjects(),
-        supabase.from('users').select('*')
-      ])
+      const p = await getProjects()
       setProjects(p || [])
-      const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-      const userNames = (u||[]).map(u => u.full_name||u.email).filter(Boolean)
-      setEngineers([...new Set([...userNames, ...saved])])
+
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
@@ -116,14 +123,7 @@ export default function Visits() {
     e.preventDefault(); setSaving(true)
     try {
       // Save engineer name
-      if (form.engineer_name) {
-        const saved = JSON.parse(localStorage.getItem('rekaz-engineers') || '[]')
-        if (!saved.includes(form.engineer_name)) {
-          saved.push(form.engineer_name)
-          localStorage.setItem('rekaz-engineers', JSON.stringify(saved))
-          setEngineers(prev => [...new Set([...prev, form.engineer_name])])
-        }
-      }
+
       if (editVisit) {
         await supabase.from('site_visits').update(form).eq('id', editVisit.id)
       } else {
@@ -157,12 +157,7 @@ export default function Visits() {
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <input className="form-input" value={form.engineer_name}
-                  onChange={e => setForm(f=>({...f, engineer_name:e.target.value}))}
-                  list="engineers-list" placeholder="Type or select..." />
-                <datalist id="engineers-list">
-                  {engineers.map((e,i) => <option key={i} value={e}/>)}
-                </datalist>
+                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
                 <div className="form-group">
