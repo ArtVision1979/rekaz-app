@@ -233,7 +233,7 @@ export function Reports() {
           <div><div class="sig-line">المالك · Client<div class="sig-name">${selectedProject.client_name||'—'}</div></div></div>
         </div>
 
-        <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · ${today} · ${reportNo}</div>
+        <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · 📞 17666882 · 📱 32277704 · 📷 rekaz.engineeringbh · ${today}</div>
 
         <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
           <button onclick="window.print()" style="background:#185FA5;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">🖨 Print</button>

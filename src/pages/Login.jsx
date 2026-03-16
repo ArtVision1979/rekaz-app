@@ -150,9 +150,16 @@ export default function Login() {
             </form>
           </div>
 
-          <p style={{textAlign:'center',fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:24}}>
-            Rekaz Engineering Office · Bahrain © 2026
-          </p>
+          <div style={{textAlign:'center',marginTop:24}}>
+            <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginBottom:6}}>
+              Rekaz Engineering Office · Bahrain © 2026
+            </p>
+            <div style={{display:'flex',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
+              <a href="tel:17666882" style={{fontSize:11,color:'rgba(255,255,255,0.25)',textDecoration:'none'}}>📞 17666882</a>
+              <a href="tel:32277704" style={{fontSize:11,color:'rgba(255,255,255,0.25)',textDecoration:'none'}}>📱 32277704</a>
+              <a href="https://instagram.com/rekaz.engineeringbh" target="_blank" rel="noreferrer" style={{fontSize:11,color:'rgba(255,255,255,0.25)',textDecoration:'none'}}>📷 @rekaz.engineeringbh</a>
+            </div>
+          </div>
         </div>
       </div>
 

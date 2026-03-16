@@ -195,7 +195,7 @@ export default function Projects() {
 
       <div class="footer">
         <span>مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain</span>
-        <span>${today} · ${p?.project_no||'—'}</span>
+        <span>📞 17666882 · 📱 32277704 · 📷 rekaz.engineeringbh</span>
       </div>
 
       </body></html>
