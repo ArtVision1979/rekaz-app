@@ -1,219 +1,364 @@
 import { useState, useEffect } from 'react'
-import { getReports, getVisits, supabase } from '../lib/supabase.js'
+import { getProjects, supabase } from '../lib/supabase.js'
 
 export function Reports() {
-  const [reports, setReports] = useState([])
+  const [projects, setProjects] = useState([])
+  const [selectedProject, setSelectedProject] = useState(null)
   const [visits, setVisits] = useState([])
+  const [selectedVisit, setSelectedVisit] = useState(null)
+  const [checklist, setChecklist] = useState([])
+  const [checklistResults, setChecklistResults] = useState({})
+  const [photos, setPhotos] = useState([])
+  const [projectSearch, setProjectSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ visit_id: '' })
   const [saving, setSaving] = useState(false)
-  const [printReport, setPrintReport] = useState(null)
+  const [notes, setNotes] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadProjects() }, [])
+  useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
+  useEffect(() => { if (selectedVisit) loadVisitData(selectedVisit) }, [selectedVisit])
 
-  async function load() {
+  async function loadProjects() {
     try {
-      const [r, v] = await Promise.all([getReports(), getVisits()])
-      setReports(r || [])
-      setVisits(v || [])
+      const p = await getProjects()
+      setProjects(p || [])
+      if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
-  async function handleCreate(e) {
-    e.preventDefault(); setSaving(true)
-    try {
-      const visit = visits.find(v => v.id === form.visit_id)
-      const year = new Date().getFullYear()
-      const report_no = `SVR-${year}-${String(reports.length + 1).padStart(3, '0')}`
-      const { data } = await supabase.from('reports')
-        .insert({ report_no, visit_id: form.visit_id, project_id: visit?.project_id })
-        .select('*, site_visits(visit_date, notes, severity, projects(name, project_no, location, client_name)), projects(name, project_no, location, client_name)')
-        .single()
-      setShowModal(false)
-      await load()
-      if (data) setTimeout(() => openPrint(data), 300)
-    } catch(e) { alert(e.message) } finally { setSaving(false) }
+  async function loadVisits(projectId) {
+    const { data } = await supabase
+      .from('site_visits')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('visit_date', { ascending: false })
+    setVisits(data || [])
+    if (data?.length) setSelectedVisit(data[0])
   }
 
-  async function openPrint(r) {
-    if (!r.site_visits) {
-      const { data } = await supabase.from('reports')
-        .select('*, site_visits(visit_date, notes, severity, projects(name, project_no, location, client_name)), projects(name, project_no, location, client_name)')
-        .eq('id', r.id).single()
-      setPrintReport(data)
+  async function loadVisitData(visit) {
+    // Load checklist based on visit notes (which contains visit type)
+    const visitType = visit.notes?.split(' — ')[0] || ''
+    
+    const [{ data: cl }, { data: results }, { data: ph }] = await Promise.all([
+      supabase.from('inspection_checklists').select('*').eq('visit_type', visitType).order('order_index'),
+      supabase.from('visit_checklist_results').select('*').eq('visit_id', visit.id),
+      supabase.from('visit_photos').select('*').eq('visit_id', visit.id)
+    ])
+
+    setChecklist(cl || [])
+    setNotes(visit.notes || '')
+
+    // Map results
+    const resultsMap = {}
+    ;(results || []).forEach(r => { resultsMap[r.checklist_item_id] = r })
+    setChecklistResults(resultsMap)
+    setPhotos(ph || [])
+  }
+
+  async function saveChecklistResult(itemId, itemText, result) {
+    if (!selectedVisit) return
+    const existing = checklistResults[itemId]
+    if (existing) {
+      await supabase.from('visit_checklist_results').update({ result }).eq('id', existing.id)
     } else {
-      setPrintReport(r)
+      const { data } = await supabase.from('visit_checklist_results').insert({
+        visit_id: selectedVisit.id,
+        checklist_item_id: itemId,
+        item_text: itemText,
+        result
+      }).select().single()
+      if (data) {
+        setChecklistResults(prev => ({ ...prev, [itemId]: data }))
+        return
+      }
     }
-    setTimeout(() => window.print(), 400)
+    setChecklistResults(prev => ({
+      ...prev,
+      [itemId]: { ...(prev[itemId] || { checklist_item_id: itemId, item_text: itemText }), result }
+    }))
   }
 
-  async function handleDelete(r) {
-    if (!confirm('Delete this report?')) return
-    await supabase.from('reports').delete().eq('id', r.id)
-    await load()
+  function getPhotoUrl(path) {
+    const { data } = supabase.storage.from('Rekaz').getPublicUrl(path)
+    return data.publicUrl
   }
 
-  return (
-    <>
-      <style>{`
-        @media print {
-          body > * { display: none !important; }
-          #print-report { display: block !important; }
-        }
-        #print-report { display: none; }
-      `}</style>
+  async function generateReport() {
+    if (!selectedVisit || !selectedProject) return
+    setSaving(true)
+    try {
+      // Save report record
+      const reportNo = `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
+      await supabase.from('reports').insert({
+        report_no: reportNo,
+        visit_id: selectedVisit.id,
+        project_id: selectedProject.id,
+      })
 
-      {printReport && <PrintTemplate report={printReport} />}
+      // Open print window
+      const passCount = Object.values(checklistResults).filter(r => r.result === 'pass').length
+      const failCount = Object.values(checklistResults).filter(r => r.result === 'fail').length
+      const naCount = Object.values(checklistResults).filter(r => r.result === 'na').length
+      const today = new Date().toLocaleDateString('en-GB')
 
-      {showModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
-          <div className="modal">
-            <h3>Generate Report</h3>
-            <form onSubmit={handleCreate}>
-              <div className="form-group">
-                <label className="form-label">Select Visit *</label>
-                <select className="form-input" value={form.visit_id} onChange={e => setForm(f => ({...f, visit_id: e.target.value}))} required>
-                  <option value="">Select visit...</option>
-                  {visits.map(v => <option key={v.id} value={v.id}>{v.projects?.name} — {v.visit_date}</option>)}
-                </select>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Generating...' : 'Generate & Print'}</button>
-              </div>
-            </form>
+      const photoHtml = photos.map(ph => `
+        <div style="break-inside:avoid;margin-bottom:12px;">
+          <img src="${getPhotoUrl(ph.file_path)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:6px;border:0.5px solid #eee;"/>
+          ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
+        </div>
+      `).join('')
+
+      const checklistHtml = checklist.length > 0 ? `
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;display:flex;justify-content:space-between;">
+            <span>Inspection Checklist — قائمة الفحص</span>
+            <span style="font-weight:400;color:#666;">✓ ${passCount} Pass · ✗ ${failCount} Fail · — ${naCount} N/A</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="background:#185FA5;color:white;">
+              <th style="padding:7px 10px;text-align:left;">#</th>
+              <th style="padding:7px 10px;text-align:left;">Item — البند</th>
+              <th style="padding:7px 10px;text-align:center;width:80px;">Result</th>
+            </tr></thead>
+            <tbody>
+              ${checklist.map((item, i) => {
+                const r = checklistResults[item.id]?.result || 'pending'
+                const color = r === 'pass' ? '#0F6E56' : r === 'fail' ? '#A32D2D' : '#888'
+                const label = r === 'pass' ? '✓ Pass' : r === 'fail' ? '✗ Fail' : r === 'na' ? '— N/A' : '○ Pending'
+                return `<tr style="background:${i%2===0?'#fafafa':'white'};">
+                  <td style="padding:6px 10px;color:#888;">${i+1}</td>
+                  <td style="padding:6px 10px;">${item.item}</td>
+                  <td style="padding:6px 10px;text-align:center;color:${color};font-weight:600;">${label}</td>
+                </tr>`
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''
+
+      const w = window.open('', '_blank')
+      w.document.write(`<!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>Site Visit Report - ${reportNo}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; padding: 36px; color: #111; font-size: 13px; }
+          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #185FA5; padding-bottom: 16px; margin-bottom: 20px; }
+          .section { border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
+          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; }
+          .info-row { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+          .info-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+          .info-value { font-size: 13px; font-weight: 500; }
+          .photos-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+          .sigs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; margin-top: 48px; }
+          .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 48px; text-align: center; font-size: 12px; }
+          .sig-name { font-size: 11px; color: #888; margin-top: 3px; }
+          .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; text-align: center; font-size: 10px; color: #bbb; }
+          .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+          @media print { body { padding: 20px; } }
+        </style>
+        </head><body>
+
+        <div class="header">
+          <div>
+            <img src="/rekaz-logo.jpg" style="height:44px;width:auto;" onerror="this.style.display='none'"/>
+            <div style="font-size:11px;color:#888;margin-top:4px;">مكتب ركاز للهندسة</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:18px;font-weight:700;color:#185FA5;">تقرير زيارة موقع</div>
+            <div style="font-size:12px;color:#888;">Site Visit Report · ${reportNo}</div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px;">${today}</div>
           </div>
         </div>
-      )}
 
-      <div className="page-header">
-        <div><h3>Reports</h3><div className="page-sub">{reports.length} reports</div></div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ New Report</button>
-      </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+          <div class="section" style="background:#f5f5f0;">
+            <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">معلومات المشروع · Project</div>
+            <div class="info-row"><div class="info-label">Project Name</div><div class="info-value">${selectedProject.name}</div></div>
+            <div class="info-row"><div class="info-label">Project No</div><div class="info-value">${selectedProject.project_no}</div></div>
+            <div class="info-row"><div class="info-label">Location</div><div class="info-value">${selectedProject.location||'—'}</div></div>
+          </div>
+          <div class="section" style="background:#E6F1FB;">
+            <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">معلومات الزيارة · Visit</div>
+            <div class="info-row"><div class="info-label">Visit Date</div><div class="info-value">${selectedVisit.visit_date}</div></div>
+            <div class="info-row"><div class="info-label">Engineer</div><div class="info-value">${selectedVisit.engineer_name||'—'}</div></div>
+            <div class="info-row"><div class="info-label">Visit Type</div><div class="info-value">${selectedVisit.notes?.split(' — ')[0]||'—'}</div></div>
+            <div class="info-row"><div class="info-label">Severity</div><div class="info-value">${selectedVisit.severity||'—'}</div></div>
+          </div>
+        </div>
 
-      <div className="card">
-        {loading ? <div style={{ color: '#888', padding: 16 }}>Loading...</div> :
-          reports.length === 0 ? (
-            <div className="empty">
-              <svg width="48" height="48" fill="none" viewBox="0 0 16 16"><path d="M4 2h6l4 4v9H4V2z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/></svg>
-              <p>No reports yet. Generate from a site visit.</p>
-            </div>
-          ) : reports.map(r => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
-              <div>
-                <div style={{ fontWeight: 500 }}>{r.report_no}</div>
-                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{r.projects?.name} · {r.site_visits?.visit_date}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className={`badge ${r.signed ? 'badge-done' : 'badge-gray'}`}>{r.signed ? 'Signed' : 'Draft'}</span>
-                <button className="btn btn-sm" onClick={() => openPrint(r)}>Print / PDF</button>
-                <button className="btn btn-sm" style={{ color: '#A32D2D', borderColor: '#A32D2D' }} onClick={() => handleDelete(r)}>Delete</button>
-              </div>
-            </div>
-          ))
-        }
-      </div>
-    </>
+        ${selectedVisit.notes ? `
+        <div class="section" style="background:#fafafa;border:0.5px solid #eee;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div>
+          <div style="font-size:13px;line-height:1.6;">${selectedVisit.notes}</div>
+        </div>
+        ` : ''}
+
+        ${checklistHtml}
+
+        ${photos.length > 0 ? `
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div>
+          <div class="photos-grid">${photoHtml}</div>
+        </div>
+        ` : ''}
+
+        <div class="sigs">
+          <div><div class="sig-line">المهندس المشرف · Engineer<div class="sig-name">${selectedProject.engineer_name||'—'}</div></div></div>
+          <div><div class="sig-line">المقاول · Contractor<div class="sig-name">${selectedProject.contractor_name||'—'}</div></div></div>
+          <div><div class="sig-line">المالك · Client<div class="sig-name">${selectedProject.client_name||'—'}</div></div></div>
+        </div>
+
+        <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · ${today} · ${reportNo}</div>
+
+        </body></html>
+      `)
+      w.document.close()
+      w.focus()
+      setTimeout(() => { w.print() }, 800)
+
+    } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+  }
+
+  const filteredProjects = projects.filter(p =>
+    p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
+    (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())
   )
-}
 
-function PrintTemplate({ report }) {
-  const v = report.site_visits || {}
-  const p = v.projects || report.projects || {}
-  const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const RESULT_COLORS = { pass:'#0F6E56', fail:'#A32D2D', na:'#888', pending:'#aaa' }
+  const RESULT_BG = { pass:'#E1F5EE', fail:'#FCEBEB', na:'#f5f5f0', pending:'#f5f5f0' }
+  const RESULT_LABELS = { pass:'✓ Pass', fail:'✗ Fail', na:'— N/A', pending:'○' }
 
   return (
-    <div id="print-report" style={{ fontFamily: 'Arial, sans-serif', color: '#000', background: '#fff', padding: 40, maxWidth: 800, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #185FA5', paddingBottom: 20, marginBottom: 24 }}>
-        <div>
-          <img src="/rekaz-logo.jpg" alt="Rekaz" style={{ height: 50, width: 'auto', borderRadius: 4 }} />
-          <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>Engineering Office</div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Bahrain · isatrading79@gmail.com</div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#185FA5' }}>SITE VISIT REPORT</div>
-          <div style={{ fontSize: 14, color: '#333', marginTop: 4 }}>{report.report_no}</div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Date: {date}</div>
-        </div>
+    <div>
+      <div className="page-header">
+        <div><h3>Reports</h3><div className="page-sub">Generate site visit reports</div></div>
+        {selectedVisit && (
+          <button className="btn btn-primary" onClick={generateReport} disabled={saving}>
+            {saving ? 'Generating...' : '📄 Generate PDF Report'}
+          </button>
+        )}
       </div>
 
-      {/* Project Info */}
-      <div style={{ background: '#f5f5f0', borderRadius: 8, padding: 16, marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#185FA5', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Project Information</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
-          {[
-            ['Project Name', p.name || '—'],
-            ['Project No', p.project_no || '—'],
-            ['Location', p.location || '—'],
-            ['Client', p.client_name || '—'],
-            ['Visit Date', v.visit_date || '—'],
-            ['Severity', v.severity || '—'],
-          ].map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: '#666', fontSize: 12, minWidth: 90 }}>{label}:</span>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{value}</span>
-            </div>
-          ))}
-        </div>
+      <div style={{marginBottom:10}}>
+        <input className="form-input" style={{maxWidth:280}} placeholder="Search projects..."
+          value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
       </div>
 
-      {/* Notes */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#185FA5', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Visit Notes & Observations</div>
-        <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, minHeight: 80, fontSize: 13, lineHeight: 1.6 }}>
-          {v.notes || 'No notes recorded for this visit.'}
-        </div>
-      </div>
-
-      {/* Checklist */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#185FA5', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Inspection Checklist</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr style={{ background: '#185FA5', color: 'white' }}>
-              <th style={{ padding: '8px 10px', textAlign: 'left' }}>Item</th>
-              <th style={{ padding: '8px 10px', textAlign: 'center', width: 80 }}>Pass</th>
-              <th style={{ padding: '8px 10px', textAlign: 'center', width: 80 }}>Fail</th>
-              <th style={{ padding: '8px 10px', textAlign: 'left' }}>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {['Site safety measures', 'Material quality check', 'Work progress verification', 'Compliance with drawings', 'Environmental conditions'].map((item, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? '#fafafa' : 'white' }}>
-                <td style={{ padding: '7px 10px', borderBottom: '1px solid #eee' }}>{item}</td>
-                <td style={{ padding: '7px 10px', textAlign: 'center', borderBottom: '1px solid #eee' }}>☐</td>
-                <td style={{ padding: '7px 10px', textAlign: 'center', borderBottom: '1px solid #eee' }}>☐</td>
-                <td style={{ padding: '7px 10px', borderBottom: '1px solid #eee' }}></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Issues */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#185FA5', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Issues & Recommendations</div>
-        <div style={{ border: '1px solid #ddd', borderRadius: 6, padding: 12, minHeight: 60, fontSize: 13 }}></div>
-      </div>
-
-      {/* Signatures */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24, marginTop: 40 }}>
-        {['Site Engineer', 'Supervisor', 'Client Representative'].map(role => (
-          <div key={role} style={{ textAlign: 'center' }}>
-            <div style={{ borderTop: '1.5px solid #333', paddingTop: 8, marginTop: 40 }}>
-              <div style={{ fontSize: 11, color: '#555' }}>{role}</div>
-              <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Name & Signature</div>
-            </div>
-          </div>
+      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+        {filteredProjects.map(p=>(
+          <button key={p.id} className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
+            style={{fontSize:12}} onClick={()=>setSelectedProject(p)}>
+            {p.name}
+          </button>
         ))}
       </div>
 
-      {/* Footer */}
-      <div style={{ borderTop: '1px solid #ddd', marginTop: 32, paddingTop: 12, textAlign: 'center', fontSize: 10, color: '#aaa' }}>
-        Rekaz Engineering Office · Bahrain · {report.report_no} · Generated {date}
-      </div>
+      {selectedProject && (
+        <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
+
+          {/* Visits List */}
+          <div className="card" style={{height:'fit-content'}}>
+            <div style={{fontWeight:500,fontSize:13,marginBottom:12,color:'var(--text)'}}>
+              Site Visits ({visits.length})
+            </div>
+            {visits.length === 0 ? (
+              <div style={{color:'var(--text-muted)',fontSize:12}}>No visits yet.</div>
+            ) : (
+              visits.map(v=>(
+                <div key={v.id}
+                  onClick={()=>setSelectedVisit(v)}
+                  style={{
+                    padding:'10px 12px',borderRadius:8,cursor:'pointer',marginBottom:6,
+                    background: selectedVisit?.id===v.id ? 'var(--blue-light)' : 'var(--bg)',
+                    border: selectedVisit?.id===v.id ? '1px solid #185FA540' : '1px solid transparent'
+                  }}>
+                  <div style={{fontWeight:500,fontSize:12,color:selectedVisit?.id===v.id?'#185FA5':'var(--text)'}}>
+                    {v.visit_date}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
+                    {v.notes?.split(' — ')[0]||'Site Visit'}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>
+                    {v.engineer_name||'—'}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Visit Details + Checklist */}
+          {selectedVisit && (
+            <div>
+              <div className="card" style={{marginBottom:16}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 24px',fontSize:13}}>
+                  <div><span style={{color:'var(--text-muted)'}}>Date: </span><strong>{selectedVisit.visit_date}</strong></div>
+                  <div><span style={{color:'var(--text-muted)'}}>Engineer: </span>{selectedVisit.engineer_name||'—'}</div>
+                  <div><span style={{color:'var(--text-muted)'}}>Type: </span>{selectedVisit.notes?.split(' — ')[0]||'—'}</div>
+                  <div><span style={{color:'var(--text-muted)'}}>Severity: </span>{selectedVisit.severity}</div>
+                </div>
+                {selectedVisit.notes && (
+                  <div style={{marginTop:10,padding:'10px 12px',background:'var(--bg)',borderRadius:8,fontSize:12,color:'var(--text-muted)'}}>
+                    {selectedVisit.notes}
+                  </div>
+                )}
+              </div>
+
+              {/* Checklist */}
+              {checklist.length > 0 && (
+                <div className="card" style={{marginBottom:16}}>
+                  <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>
+                    Inspection Checklist — قائمة الفحص
+                    <span style={{fontSize:11,color:'var(--text-muted)',marginRight:8,fontWeight:400}}>
+                      {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass ·
+                      {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail
+                    </span>
+                  </div>
+                  {checklist.map((item,i)=>{
+                    const result = checklistResults[item.id]?.result || 'pending'
+                    return (
+                      <div key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}}>
+                        <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
+                        <div style={{flex:1,fontSize:13}}>{item.item}</div>
+                        <div style={{display:'flex',gap:6}}>
+                          {['pass','fail','na'].map(r=>(
+                            <button key={r} onClick={()=>saveChecklistResult(item.id,item.item,r)}
+                              style={{
+                                padding:'3px 10px',borderRadius:20,border:'none',cursor:'pointer',
+                                fontSize:11,fontWeight:500,
+                                background: result===r ? RESULT_BG[r] : 'var(--bg)',
+                                color: result===r ? RESULT_COLORS[r] : 'var(--text-muted)',
+                                outline: result===r ? `1.5px solid ${RESULT_COLORS[r]}` : 'none'
+                              }}>
+                              {RESULT_LABELS[r]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Photos */}
+              {photos.length > 0 && (
+                <div className="card">
+                  <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>Photos ({photos.length})</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                    {photos.map(ph=>(
+                      <img key={ph.id} src={getPhotoUrl(ph.file_path)}
+                        style={{width:'100%',height:100,objectFit:'cover',borderRadius:6,cursor:'pointer'}}
+                        onClick={()=>window.open(getPhotoUrl(ph.file_path),'_blank')}/>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
+
+export default Reports
