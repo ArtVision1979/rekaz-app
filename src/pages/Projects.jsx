@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { getProjects, createProject, supabase } from '../lib/supabase.js'
 
 const STATUS_COLORS = { active:'badge-progress', completed:'badge-done', on_hold:'badge-gray', cancelled:'badge-open' }
-const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', engineer_name:'', engineer_phone:'', supervision_start:'', status:'active', progress:0 }
+const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', status:'active', progress:0 }
 
 export default function Projects() {
   const [projects, setProjects] = useState([])
@@ -42,6 +42,7 @@ export default function Projects() {
       name: p.name, project_no: p.project_no, location: p.location||'',
       client_name: p.client_name||'', client_phone: p.client_phone||'',
       engineer_name: p.engineer_name||'', engineer_phone: p.engineer_phone||'',
+      contractor_name: p.contractor_name||'', contractor_phone: p.contractor_phone||'',
       supervision_start: p.supervision_start||'', status: p.status, progress: p.progress||0
     })
     setShowModal(true)
@@ -166,6 +167,20 @@ export default function Projects() {
         </div>
       </div>
 
+      <div class="section" style="background:#FFF3E0;margin-bottom:14px;">
+        <div class="section-header">
+          <div class="section-icon" style="background:#FFE0B2;">🔨</div>
+          <div>
+            <div class="section-title">معلومات المقاول</div>
+            <div class="section-subtitle">Contractor Information</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;">
+          <div class="info-row"><div class="info-label">الاسم · Name</div><div class="info-value">${p?.contractor_name||'—'}</div></div>
+          <div class="info-row"><div class="info-label">رقم التواصل · Phone</div><div class="info-value">${p?.contractor_phone||'—'}</div></div>
+        </div>
+      </div>
+
       ${pvList.length > 0 ? `
       <div class="section" style="background:#fafafa;border:0.5px solid #eee;">
         <div class="section-header">
@@ -203,9 +218,10 @@ export default function Projects() {
       </div>
       ` : ''}
 
-      <div class="sigs">
-        <div><div class="sig-line">توقيع المالك · Client Signature<div class="sig-name">${p?.client_name||'—'}</div></div></div>
-        <div><div class="sig-line">توقيع المهندس · Engineer Signature<div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
+      <div class="sigs" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
+        <div><div class="sig-line">توقيع المالك · Client<div class="sig-name">${p?.client_name||'—'}</div></div></div>
+        <div><div class="sig-line">توقيع المقاول · Contractor<div class="sig-name">${p?.contractor_name||'—'}</div></div></div>
+        <div><div class="sig-line">توقيع المهندس · Engineer<div class="sig-name">${p?.engineer_name||'—'}</div></div></div>
       </div>
 
       <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · البحرين · Bahrain · ${today}</div>
@@ -415,6 +431,20 @@ export default function Projects() {
                 </div>
               </div>
 
+              <div style={{borderTop:'0.5px solid var(--border)',margin:'12px 0',paddingTop:12}}>
+                <div style={{fontSize:12,fontWeight:500,color:'var(--text-muted)',marginBottom:10}}>Contractor Info — معلومات المقاول</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  <div className="form-group">
+                    <label className="form-label">Contractor Name — اسم المقاول</label>
+                    <input className="form-input" value={form.contractor_name} onChange={e=>setForm(f=>({...f,contractor_name:e.target.value}))}/>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Contractor Phone — رقم التواصل</label>
+                    <input className="form-input" value={form.contractor_phone} onChange={e=>setForm(f=>({...f,contractor_phone:e.target.value}))} placeholder="+973 XXXX XXXX"/>
+                  </div>
+                </div>
+              </div>
+
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
                   <label className="form-label">Status</label>
@@ -466,7 +496,7 @@ export default function Projects() {
           filtered.length === 0 ? <div className="empty"><p>No projects yet.</p></div> : (
             <table className="table">
               <thead><tr>
-                <th>Project</th><th>Client</th><th>Engineer</th><th>Progress</th><th>Status</th><th></th>
+                <th>Project</th><th>Client</th><th>Engineer</th><th>Contractor</th><th>Progress</th><th>Status</th><th></th>
               </tr></thead>
               <tbody>
                 {filtered.map(p=>(
@@ -482,6 +512,10 @@ export default function Projects() {
                     <td>
                       <div style={{fontSize:13}}>{p.engineer_name||'—'}</div>
                       {p.engineer_phone && <div style={{fontSize:11,color:'var(--text-muted)'}}>{p.engineer_phone}</div>}
+                    </td>
+                    <td>
+                      <div style={{fontSize:13}}>{p.contractor_name||'—'}</div>
+                      {p.contractor_phone && <div style={{fontSize:11,color:'var(--text-muted)'}}>{p.contractor_phone}</div>}
                     </td>
                     <td>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
