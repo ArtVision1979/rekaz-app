@@ -19,6 +19,8 @@ export default function Visits() {
   const [showChecklist, setShowChecklist] = useState(null)
   const [checklist, setChecklist] = useState([])
   const [checklistResults, setChecklistResults] = useState({})
+  const [checklistNotes, setChecklistNotes] = useState({})
+  const [editingNote, setEditingNote] = useState(null)
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
@@ -74,21 +76,28 @@ export default function Visits() {
     setChecklistResults(resultsMap)
   }
 
-  async function saveChecklistResult(itemId, itemText, result) {
+  async function saveChecklistResult(itemId, itemText, result, notes) {
     if (!showChecklist) return
     const existing = checklistResults[itemId]
+    const updateData = notes !== undefined ? { result, notes } : { result }
     if (existing) {
-      await supabase.from('visit_checklist_results').update({ result }).eq('id', existing.id)
+      await supabase.from('visit_checklist_results').update(updateData).eq('id', existing.id)
     } else {
       const { data } = await supabase.from('visit_checklist_results').insert({
         visit_id: showChecklist.id,
         checklist_item_id: itemId,
         item_text: itemText,
-        result
+        ...updateData
       }).select().single()
       if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
     }
-    setChecklistResults(prev => ({ ...prev, [itemId]: { ...(prev[itemId]||{}), result } }))
+    setChecklistResults(prev => ({ ...prev, [itemId]: { ...(prev[itemId]||{}), ...updateData } }))
+  }
+
+  async function saveNote(itemId, itemText, notes) {
+    const result = checklistResults[itemId]?.result || 'pending'
+    await saveChecklistResult(itemId, itemText, result, notes)
+    setEditingNote(null)
   }
 
   function openNew() {
@@ -217,19 +226,49 @@ export default function Visits() {
                   const colors = {pass:'#0F6E56',fail:'#A32D2D',na:'#888',pending:'#aaa'}
                   const bgs = {pass:'#E1F5EE',fail:'#FCEBEB',na:'#f5f5f0',pending:'#f5f5f0'}
                   return (
-                    <div key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}}>
-                      <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
-                      <div style={{flex:1,fontSize:13}}>{item.item}</div>
-                      <div style={{display:'flex',gap:5}}>
-                        {['pass','fail','na'].map(r=>(
-                          <button key={r} onClick={()=>saveChecklistResult(item.id,item.item,r)}
-                            style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:500,
-                              background:result===r?bgs[r]:'var(--bg)',color:result===r?colors[r]:'var(--text-muted)',
-                              outline:result===r?`1.5px solid ${colors[r]}`:'none'}}>
-                            {r==='pass'?'✓':r==='fail'?'✗':'—'}
+                    <div key={item.id} style={{padding:'8px 0',borderBottom:'0.5px solid var(--border)'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
+                        <div style={{flex:1,fontSize:13}}>{item.item}</div>
+                        <div style={{display:'flex',gap:5,alignItems:'center'}}>
+                          {['pass','fail','na'].map(r=>(
+                            <button key={r} onClick={()=>saveChecklistResult(item.id,item.item,r)}
+                              style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:500,
+                                background:result===r?bgs[r]:'var(--bg)',color:result===r?colors[r]:'var(--text-muted)',
+                                outline:result===r?`1.5px solid ${colors[r]}`:'none'}}>
+                              {r==='pass'?'✓':r==='fail'?'✗':'—'}
+                            </button>
+                          ))}
+                          <button onClick={()=>setEditingNote(editingNote===item.id?null:item.id)}
+                            style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,
+                              background:checklistResults[item.id]?.notes?'#FAEEDA':'var(--bg)',
+                              color:checklistResults[item.id]?.notes?'#854F0B':'var(--text-muted)'}}>
+                            💬
                           </button>
-                        ))}
+                        </div>
                       </div>
+                      {checklistResults[item.id]?.notes && editingNote !== item.id && (
+                        <div style={{marginTop:6,marginRight:30,fontSize:12,color:'#854F0B',background:'#FAEEDA',borderRadius:6,padding:'4px 10px'}}>
+                          {checklistResults[item.id].notes}
+                        </div>
+                      )}
+                      {editingNote === item.id && (
+                        <div style={{marginTop:8,marginRight:30,display:'flex',gap:8}}>
+                          <input className="form-input" style={{flex:1,fontSize:12}}
+                            defaultValue={checklistResults[item.id]?.notes||''}
+                            placeholder="Add note or reason..."
+                            autoFocus
+                            onKeyDown={e=>{
+                              if(e.key==='Enter') saveNote(item.id,item.item,e.target.value)
+                              if(e.key==='Escape') setEditingNote(null)
+                            }}
+                            id={`note-${item.id}`}/>
+                          <button className="btn btn-sm btn-primary"
+                            onClick={()=>saveNote(item.id,item.item,document.getElementById(`note-${item.id}`).value)}>
+                            Save
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
