@@ -401,22 +401,22 @@ export default function Projects() {
             <h3>{editProject ? 'Edit Project' : 'New Project'}</h3>
             <form onSubmit={handleSave}>
               <div className="form-group">
-                <label className="form-label">Project Name *</label>
+                <label className="form-label">Project Name * — اسم المشروع</label>
                 <input className="form-input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required autoFocus/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
-                  <label className="form-label">Project No *</label>
+                  <label className="form-label">Project No * — رقم المشروع</label>
                   <input className="form-input" value={form.project_no} placeholder="RKZ-0001" onChange={e=>setForm(f=>({...f,project_no:e.target.value}))} required/>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Location</label>
+                  <label className="form-label">Location — موقع المشروع</label>
                   <input className="form-input" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}/>
                 </div>
               </div>
 
               <div style={{borderTop:'0.5px solid var(--border)',margin:'12px 0',paddingTop:12}}>
-                <div style={{fontSize:12,fontWeight:500,color:'var(--text-muted)',marginBottom:10}}>Client Info — معلومات المالك</div>
+                
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                   <div className="form-group">
                     <label className="form-label">Client Name — اسم المالك</label>
@@ -430,7 +430,7 @@ export default function Projects() {
               </div>
 
               <div style={{borderTop:'0.5px solid var(--border)',margin:'12px 0',paddingTop:12}}>
-                <div style={{fontSize:12,fontWeight:500,color:'var(--text-muted)',marginBottom:10}}>Engineer Info — معلومات المهندس</div>
+                
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                   <div className="form-group">
                     <label className="form-label">Engineer Name — اسم المهندس</label>
@@ -444,7 +444,7 @@ export default function Projects() {
               </div>
 
               <div style={{borderTop:'0.5px solid var(--border)',margin:'12px 0',paddingTop:12}}>
-                <div style={{fontSize:12,fontWeight:500,color:'var(--text-muted)',marginBottom:10}}>Contractor Info — معلومات المقاول</div>
+                
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                   <div className="form-group">
                     <label className="form-label">Contractor Name — اسم المقاول</label>
