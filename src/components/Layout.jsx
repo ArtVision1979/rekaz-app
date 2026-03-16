@@ -65,8 +65,12 @@ export default function Layout() {
             <h2>{pageTitle}</h2>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <button className="lang-toggle" onClick={toggleLang}>
-              {lang === 'en' ? 'ع' : 'EN'}
+            <button className="lang-toggle" onClick={toggleLang} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px'}}>
+              {lang === 'en' ? (
+                <span>🌐 <span style={{fontFamily:'inherit'}}>عربي</span></span>
+              ) : (
+                <span>🌐 English</span>
+              )}
             </button>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}

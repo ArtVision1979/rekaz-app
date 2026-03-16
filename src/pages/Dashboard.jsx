@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, getProjects } from '../lib/supabase.js'
 import { useNavigate } from 'react-router-dom'
 import { createBackup, checkBackupNeeded, saveBackupDate } from '../hooks/useBackup.js'
+import { useLang } from '../hooks/useSettings.js'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState([])
@@ -14,6 +15,7 @@ export default function Dashboard() {
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
   const navigate = useNavigate()
+  const { lang } = useLang()
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
@@ -80,7 +82,7 @@ export default function Dashboard() {
           <span style={{fontSize:16}}>💾</span>
           <span style={{color:'var(--amber)',fontSize:13,fontWeight:500,flex:1}}>No backup in over a week</span>
           <button className="btn btn-sm" style={{color:'var(--amber)',borderColor:'var(--amber)'}} onClick={handleBackup} disabled={backing}>
-            {backing ? 'Backing up...' : 'Backup Now'}
+            {backing ? lang==='ar'?'جاري النسخ...':'Backing up...' : lang==='ar'?'نسخ الآن':'Backup Now'}
           </button>
         </div>
       )}
@@ -99,10 +101,10 @@ export default function Dashboard() {
       {/* Stats */}
       <div className="stats-grid" style={{marginBottom:20}}>
         {[
-          { label:'Active Projects', value: stats.active, sub:`${stats.total} total`, color:'#185FA5', icon:'🏗️', path:'/projects' },
-          { label:'Open Tasks', value: stats.openTasks, sub:`${stats.overdueTasks} overdue`, color: stats.overdueTasks > 0 ? '#A32D2D' : '#0F6E56', icon:'✓', path:'/tasks' },
-          { label:'Site Visits', value: stats.visits, sub:'This period', color:'#0F6E56', icon:'📍', path:'/visits' },
-          { label:'Reports', value: stats.reports, sub:'Generated', color:'#854F0B', icon:'📄', path:'/reports' },
+          { label: lang==='ar'?'المشاريع النشطة':'Active Projects', value: stats.active, sub:`${stats.total} ${lang==='ar'?'إجمالي':'total'}`, color:'#185FA5', icon:'🏗️', path:'/projects' },
+          { label: lang==='ar'?'المهام المفتوحة':'Open Tasks', value: stats.openTasks, sub:`${stats.overdueTasks} ${lang==='ar'?'متأخرة':'overdue'}`, color: stats.overdueTasks > 0 ? '#A32D2D' : '#0F6E56', icon:'✓', path:'/tasks' },
+          { label: lang==='ar'?'زيارات المواقع':'Site Visits', value: stats.visits, sub: lang==='ar'?'هذه الفترة':'This period', color:'#0F6E56', icon:'📍', path:'/visits' },
+          { label: lang==='ar'?'التقارير':'Reports', value: stats.reports, sub: lang==='ar'?'منشأة':'Generated', color:'#854F0B', icon:'📄', path:'/reports' },
         ].map(s => (
           <div key={s.label} className="stat-card" onClick={()=>navigate(s.path)}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
@@ -121,7 +123,7 @@ export default function Dashboard() {
           <div className="card-header">
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <span style={{fontSize:18}}>📅</span>
-              <span className="card-title" style={{color:'var(--blue-dark)'}}>Today's Visits — {new Date().toLocaleDateString('en-GB')}</span>
+              <span className="card-title" style={{color:'var(--blue-dark)'}}>{lang==='ar'?'زيارات اليوم':'Today\'s Visits'} — {new Date().toLocaleDateString('en-GB')}</span>
             </div>
             <button className="btn btn-sm" onClick={()=>navigate('/project-visits')}>View الكل</button>
           </div>
@@ -147,7 +149,7 @@ export default function Dashboard() {
       {projects.length > 0 && (
         <div className="card" style={{marginBottom:16}}>
           <div className="card-header">
-            <span className="card-title">Active Projects</span>
+            <span className="card-title">{lang==='ar'?'المشاريع النشطة':'Active Projects'}</span>
             <button className="btn btn-sm" onClick={()=>navigate('/projects')}>View الكل</button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
@@ -177,11 +179,11 @@ export default function Dashboard() {
         {/* Recent Visits */}
         <div className="card">
           <div className="card-header">
-            <span className="card-title">Recent Visits</span>
+            <span className="card-title">{lang==='ar'?'آخر الزيارات':'Recent Visits'}</span>
             <button className="btn btn-sm" onClick={()=>navigate('/visits')}>View الكل</button>
           </div>
           {recentVisits.length === 0 ? (
-            <div className="empty"><p>No visits yet</p></div>
+            <div className="empty"><p>{lang==='ar'?'لا توجد زيارات بعد':'No visits yet'}</p></div>
           ) : recentVisits.map(v=>(
             <div className="list-item" key={v.id}>
               <div className="dot" style={{background: v.severity==='high'||v.severity==='critical' ? '#A32D2D' : '#185FA5'}}/>
@@ -197,11 +199,11 @@ export default function Dashboard() {
         {/* Open Tasks */}
         <div className="card">
           <div className="card-header">
-            <span className="card-title">Open Tasks</span>
+            <span className="card-title">{lang==='ar'?'المهام المفتوحة':'Open Tasks'}</span>
             <button className="btn btn-sm" onClick={()=>navigate('/tasks')}>View الكل</button>
           </div>
           {openTasks.length === 0 ? (
-            <div className="empty"><p>No open tasks 🎉</p></div>
+            <div className="empty"><p>{lang==='ar'?'لا توجد مهام مفتوحة 🎉':'No open tasks 🎉'}</p></div>
           ) : openTasks.map(t=>{
             const isOverdue = t.due_date && t.due_date < today
             return (
@@ -222,7 +224,7 @@ export default function Dashboard() {
       {milestones.length > 0 && (
         <div className="card" style={{marginTop:16}}>
           <div className="card-header">
-            <span className="card-title">Upcoming Milestones</span>
+            <span className="card-title">{lang==='ar'?'المراحل القادمة':'Upcoming Milestones'}</span>
             <button className="btn btn-sm" onClick={()=>navigate('/milestones')}>View الكل</button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
@@ -246,7 +248,7 @@ export default function Dashboard() {
       {/* Backup button */}
       <div style={{textAlign:'center',marginTop:20}}>
         <button className="btn btn-sm" onClick={handleBackup} disabled={backing} style={{fontSize:11,color:'var(--text-muted)'}}>
-          💾 {backing ? 'Backing up...' : 'Download Backup'}
+          💾 {backing ? lang==='ar'?'جاري النسخ...':'Backing up...' : lang==='ar'?'تحميل نسخة احتياطية':'Download Backup'}
         </button>
       </div>
     </div>
