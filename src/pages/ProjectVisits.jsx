@@ -146,17 +146,21 @@ export default function ProjectVisits() {
     if (nextStatus === 'completed') {
       const today = new Date().toISOString().split('T')[0]
       const visitDate = v.scheduled_date || today
-      const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title).maybeSingle()
+      const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title + (v.title_ar ? ' — ' + v.title_ar : '')).maybeSingle()
       if (!existing) {
-        await supabase.from('site_visits').insert({
-          project_id: v.project_id,
-          visit_date: visitDate,
-          engineer_name: v.engineer_name || '',
-          notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
-          severity: 'low',
-          status: 'submitted'
-        })
-        alert('✅ Site Visit created: ' + v.title)
+        const createSiteVisit = confirm('✅ Visit marked as completed.
+
+Create a Site Visit report for this visit?')
+        if (createSiteVisit) {
+          await supabase.from('site_visits').insert({
+            project_id: v.project_id,
+            visit_date: visitDate,
+            engineer_name: v.engineer_name || '',
+            notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
+            severity: 'low',
+            status: 'submitted'
+          })
+        }
       }
     }
     setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
