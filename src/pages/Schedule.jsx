@@ -38,12 +38,17 @@ export default function Schedule() {
       const [{ data: s }, p, { data: pv }] = await Promise.all([
         supabase.from('schedule_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).order('scheduled_time'),
         getProjects(),
-        supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).eq('status', 'scheduled').order('scheduled_time')
+        supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time')
       ])
       // Merge schedule_visits and project_visits
       const merged = [
         ...(s || []),
-        ...(pv || []).map(v => ({ ...v, _from_project_visits: true }))
+        ...(pv || []).map(v => ({ 
+          ...v, 
+          _from_project_visits: true,
+          scheduled_time: v.scheduled_time || '09:00',
+          notes: v.title + (v.title_ar ? ' — ' + v.title_ar : '')
+        }))
       ]
       setSchedule(merged)
       setProjects(p || [])
