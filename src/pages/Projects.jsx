@@ -459,16 +459,16 @@ export default function Projects() {
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
-                  <label className="form-label">Status</label>
+                  <label className="form-label">Status — الحالة</label>
                   <select className="form-input" value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
-                    <option value="active">Active</option>
-                    <option value="on_hold">On Hold</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value="active">Active — نشط</option>
+                    <option value="on_hold">On Hold — متوقف</option>
+                    <option value="completed">Completed — منتهي</option>
+                    <option value="cancelled">Cancelled — ملغي</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Supervision Start — بداية الإشراف</label>
+                  <label className="form-label">Supervision Start — تاريخ بداية الإشراف</label>
                   <input type="date" className="form-input" value={form.supervision_start} onChange={e=>setForm(f=>({...f,supervision_start:e.target.value}))}/>
                 </div>
               </div>
