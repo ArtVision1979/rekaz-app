@@ -16,6 +16,9 @@ export default function Visits() {
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
   const [engineers, setEngineers] = useState([])
+  const [showChecklist, setShowChecklist] = useState(null)
+  const [checklist, setChecklist] = useState([])
+  const [checklistResults, setChecklistResults] = useState({})
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
@@ -44,6 +47,48 @@ export default function Visits() {
         .order('visit_date', { ascending: false })
       setVisits(data || [])
     } catch(e) { console.error(e) } finally { setLoading(false) }
+  }
+
+  async function openChecklist(visit) {
+    setShowChecklist(visit)
+    const fullNotes = visit.notes?.trim() || ''
+    const shortType = visit.notes?.split(' — ')[0]?.trim() || ''
+    
+    const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
+    const { data: results } = await supabase.from('visit_checklist_results').select('*').eq('visit_id', visit.id)
+    
+    let clData = []
+    if (allItems?.length) {
+      const types = [...new Set(allItems.map(i => i.visit_type))]
+      const bestMatch = 
+        types.find(t => t === fullNotes) ||
+        types.find(t => t === shortType) ||
+        types.find(t => fullNotes.toLowerCase().includes(t.toLowerCase())) ||
+        types.find(t => t.toLowerCase().includes(shortType.toLowerCase()))
+      if (bestMatch) clData = allItems.filter(i => i.visit_type === bestMatch)
+    }
+    setChecklist(clData)
+    
+    const resultsMap = {}
+    ;(results || []).forEach(r => { resultsMap[r.checklist_item_id] = r })
+    setChecklistResults(resultsMap)
+  }
+
+  async function saveChecklistResult(itemId, itemText, result) {
+    if (!showChecklist) return
+    const existing = checklistResults[itemId]
+    if (existing) {
+      await supabase.from('visit_checklist_results').update({ result }).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('visit_checklist_results').insert({
+        visit_id: showChecklist.id,
+        checklist_item_id: itemId,
+        item_text: itemText,
+        result
+      }).select().single()
+      if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
+    }
+    setChecklistResults(prev => ({ ...prev, [itemId]: { ...(prev[itemId]||{}), result } }))
   }
 
   function openNew() {
@@ -148,6 +193,52 @@ export default function Visits() {
         </div>
       )}
 
+      {showChecklist && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowChecklist(null)}>
+          <div className="modal" style={{maxWidth:560}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <h3 style={{margin:0}}>Checklist — {showChecklist.visit_date}</h3>
+              <button className="btn btn-sm" onClick={()=>setShowChecklist(null)}>Close</button>
+            </div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14}}>
+              {showChecklist.notes?.split(' — ')[0]||'Site Visit'}
+            </div>
+            {checklist.length === 0 ? (
+              <div style={{color:'var(--text-muted)',fontSize:13,padding:'16px 0'}}>No checklist available for this visit type.</div>
+            ) : (
+              <>
+                <div style={{marginBottom:8,fontSize:12,color:'var(--text-muted)'}}>
+                  ✓ {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass · 
+                  ✗ {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail ·
+                  — {Object.values(checklistResults).filter(r=>r.result==='na').length} N/A
+                </div>
+                {checklist.map((item,i)=>{
+                  const result = checklistResults[item.id]?.result || 'pending'
+                  const colors = {pass:'#0F6E56',fail:'#A32D2D',na:'#888',pending:'#aaa'}
+                  const bgs = {pass:'#E1F5EE',fail:'#FCEBEB',na:'#f5f5f0',pending:'#f5f5f0'}
+                  return (
+                    <div key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'0.5px solid var(--border)'}}>
+                      <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
+                      <div style={{flex:1,fontSize:13}}>{item.item}</div>
+                      <div style={{display:'flex',gap:5}}>
+                        {['pass','fail','na'].map(r=>(
+                          <button key={r} onClick={()=>saveChecklistResult(item.id,item.item,r)}
+                            style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:500,
+                              background:result===r?bgs[r]:'var(--bg)',color:result===r?colors[r]:'var(--text-muted)',
+                              outline:result===r?`1.5px solid ${colors[r]}`:'none'}}>
+                            {r==='pass'?'✓':r==='fail'?'✗':'—'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
       <SectionHelp
         title="Site Visits — تقارير زيارات الموقع"
@@ -225,6 +316,7 @@ export default function Visits() {
                         <td><span className={`badge ${SEV_COLOR[v.severity]||'badge-gray'}`}>{v.severity}</span></td>
                         <td><span className={`badge ${v.status==='approved'?'badge-done':v.status==='submitted'?'badge-progress':'badge-gray'}`}>{v.status}</span></td>
                         <td><div style={{display:'flex',gap:6}}>
+                          <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={()=>openChecklist(v)}>☑ Check</button>
                           <button className="btn btn-sm" onClick={()=>openEdit(v)}>Edit</button>
                           <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(v)}>Delete</button>
                         </div></td>
