@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase } from '../lib/supabase.js'
-import { requestNotificationPermission, scheduleAllVisits, cancelNotification } from '../hooks/useNotifications.js'
+import { requestNotificationPermission, scheduleAllVisits } from '../hooks/useNotifications.js'
 
 const DAYS = ['Sat','Sun','Mon','Tue','Wed','Thu']
 const COLORS = ['#185FA5','#0F6E56','#854F0B','#A32D2D','#534AB7','#1D9E75']
@@ -21,7 +21,6 @@ export default function Schedule() {
   const [notifPermission, setNotifPermission] = useState(Notification?.permission || 'default')
   const [notifBefore, setNotifBefore] = useState(60)
   const [notifIds, setNotifIds] = useState({})
-  const [showNotifBar, setShowNotifBar] = useState(false)
   const weekDates = getWeekDates()
   const notifIdsRef = useRef({})
 
@@ -31,176 +30,102 @@ export default function Schedule() {
     try {
       const start = weekDates[0].toISOString().split('T')[0]
       const end = weekDates[5].toISOString().split('T')[0]
-      const [{ data: s }, p, { data: pv }, { data: cons }] = await Promise.all([
-        supabase.from('schedule_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).order('scheduled_time'),
-        getProjects(),
+
+      const [{ data: pv }, p, { data: cons }] = await Promise.all([
         supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
+        getProjects(),
         supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).eq('status','pending').order('consultation_time')
       ])
-      // Merge all visit types
+
       const merged = [
-        ...(s || []),
-        ...(pv || []).map(v => ({ 
-          ...v, 
-          _from_project_visits: true,
+        ...(pv || []).map(v => ({
+          ...v,
           scheduled_time: v.scheduled_time || '09:00',
-          notes: v.title + (v.title_ar ? ' — ' + v.title_ar : '')
+          _label: v.title,
+          _projectName: v.projects?.name || '—',
+          _type: 'visit'
         })),
         ...(cons || []).map(c => ({
           ...c,
-          _from_consultations: true,
           scheduled_date: c.consultation_date,
           scheduled_time: c.consultation_time || '09:00',
-          projects: { name: '💼 ' + c.client_name },
-          notes: c.topic
+          _label: c.topic,
+          _projectName: '💼 ' + c.client_name,
+          _type: 'consultation'
         }))
       ]
+
       setSchedule(merged)
       setProjects(p || [])
+
       if (Notification?.permission === 'granted') {
-        // Schedule notifications for all visit types
-        const allForNotif = [
-          ...(s || []),
-          ...(cons || []).map(c => ({
-            ...c,
-            id: c.id,
-            scheduled_date: c.consultation_date,
-            scheduled_time: c.consultation_time,
-            projects: { name: '💼 ' + c.client_name }
-          }))
-        ]
+        const allForNotif = merged.map(v => ({
+          ...v,
+          projects: { name: v._projectName }
+        }))
         const ids = scheduleAllVisits(allForNotif, notifBefore)
         notifIdsRef.current = ids
         setNotifIds(ids)
       }
-    } catch(e){ console.error(e) } finally { setLoading(false) }
+    } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
   async function enableNotifications() {
     const granted = await requestNotificationPermission()
     setNotifPermission(granted ? 'granted' : 'denied')
-    if (granted) {
-      const ids = scheduleAllVisits(schedule, notifBefore)
-      notifIdsRef.current = ids
-      setNotifIds(ids)
-      setShowNotifBar(false)
-    }
-  }
-
-  function openNew() {
-    setEditItem(null)
-    setForm({ project_id:'', scheduled_date: weekDates[0].toISOString().split('T')[0], scheduled_time:'09:00', notes:'' })
-    setShowModal(true)
-  }
-
-  function openEdit(item) {
-    setEditItem(item)
-    setForm({ project_id: item.project_id, scheduled_date: item.scheduled_date, scheduled_time: item.scheduled_time||'09:00', notes: item.notes||'' })
-    setShowModal(true)
-  }
-
-
-  async function handleDelete(item) {
-    if (!confirm('Delete this visit?')) return
-    if (notifIdsRef.current[item.id]) cancelNotification(notifIdsRef.current[item.id])
-    await supabase.from('schedule_visits').delete().eq('id', item.id)
-    await load()
-  }
-
-  function sendTestNotif() {
-    if (Notification.permission !== 'granted') return
-    new Notification('🔔 تذكير زيارة موقع — ركاز', {
-      body: 'هذا اختبار للتنبيهات — يعمل بشكل صحيح!',
-      icon: '/logo192.png',
-      requireInteraction: false,
-    })
+    if (granted) await load()
   }
 
   const times = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00']
+
   const projectColorMap = {}
   projects.forEach((p,i) => { projectColorMap[p.id] = i % COLORS.length })
 
-  const scheduledCount = Object.keys(notifIds).length
-
   return (
     <>
-      {showModal && (
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-          <div className="modal">
-            <h3>{editItem ? 'Edit Visit' : 'Add Scheduled Visit'}</h3>
-            <form onSubmit={handleSave}>
-              <div className="form-group">
-                <label className="form-label">Project *</label>
-                <select className="form-input" value={form.project_id} onChange={e=>setForm(f=>({...f,project_id:e.target.value}))} required>
-                  <option value="">Select project...</option>
-                  {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                <div className="form-group">
-                  <label className="form-label">Date *</label>
-                  <input type="date" className="form-input" value={form.scheduled_date} onChange={e=>setForm(f=>({...f,scheduled_date:e.target.value}))} required/>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Time</label>
-                  <input type="time" className="form-input" value={form.scheduled_time} onChange={e=>setForm(f=>({...f,scheduled_time:e.target.value}))}/>
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Notes</label>
-                <input className="form-input" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Optional notes..."/>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn" onClick={()=>setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>{saving?'Saving...':editItem?'Save':'Add'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       <div className="page-header">
         <div>
           <h3>Schedule</h3>
-          <div className="page-sub">Week of {weekDates[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – {weekDates[5].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+          <div className="page-sub">
+            Week of {weekDates[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – {weekDates[5].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}
+          </div>
         </div>
-        <div style={{display:'flex',gap:8}}>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {notifPermission === 'granted' ? (
             <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <span style={{fontSize:12,color:'#0F6E56'}}>🔔 {scheduledCount} تنبيه مجدول</span>
-              <select className="form-input" style={{width:120,fontSize:12}} value={notifBefore} onChange={e=>{setNotifBefore(parseInt(e.target.value));load()}}>
-                <option value={15}>قبل 15 د</option>
-                <option value={30}>قبل 30 د</option>
-                <option value={60}>قبل ساعة</option>
-                <option value={120}>قبل ساعتين</option>
+              <span style={{fontSize:12,color:'#0F6E56'}}>🔔 Reminders On</span>
+              <select className="form-input" style={{width:120,fontSize:12}} value={notifBefore}
+                onChange={e=>{setNotifBefore(parseInt(e.target.value));load()}}>
+                <option value={15}>15 min before</option>
+                <option value={30}>30 min before</option>
+                <option value={60}>1 hour before</option>
+                <option value={120}>2 hours before</option>
               </select>
-              <button className="btn btn-sm" onClick={sendTestNotif}>اختبار</button>
             </div>
           ) : (
             <button className="btn" style={{fontSize:12,color:'#185FA5',borderColor:'#185FA5'}} onClick={enableNotifications}>
-              🔔 تفعيل التنبيهات
+              🔔 Enable Reminders
             </button>
           )}
-
         </div>
       </div>
 
       {notifPermission === 'denied' && (
-        <div style={{background:'#FAEEDA',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'#633806'}}>
-          ⚠ التنبيهات محجوبة في المتصفح. اذهب إلى إعدادات المتصفح وأذن للموقع بإرسال التنبيهات.
+        <div style={{background:'var(--amber-light)',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--amber)'}}>
+          ⚠ Notifications blocked. Enable them in browser settings.
         </div>
       )}
 
       <div className="card" style={{overflowX:'auto'}}>
-        {loading ? <div style={{color:'#888',padding:16}}>Loading...</div> : (
+        {loading ? <div style={{color:'var(--text-muted)',padding:16}}>Loading...</div> : (
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:600}}>
             <thead>
               <tr>
-                <th style={{width:60,padding:'8px 10px',color:'#888',fontWeight:400,textAlign:'left',borderBottom:'0.5px solid rgba(0,0,0,0.08)'}}></th>
+                <th style={{width:60,padding:'8px 10px',color:'var(--text-muted)',fontWeight:400,textAlign:'left',borderBottom:'0.5px solid var(--border)'}}></th>
                 {weekDates.map((d,i) => {
                   const isToday = d.toDateString() === new Date().toDateString()
                   return (
-                    <th key={i} style={{padding:'8px 6px',fontWeight:500,textAlign:'center',borderBottom:'0.5px solid rgba(0,0,0,0.08)',background:isToday?'#E6F1FB':'transparent',color:isToday?'#0C447C':'inherit',borderRadius:isToday?6:0}}>
+                    <th key={i} style={{padding:'8px 6px',fontWeight:500,textAlign:'center',borderBottom:'0.5px solid var(--border)',background:isToday?'var(--blue-light)':'transparent',color:isToday?'var(--blue-dark)':'inherit',borderRadius:isToday?6:0}}>
                       {DAYS[i]} {d.getDate()}
                     </th>
                   )
@@ -210,21 +135,32 @@ export default function Schedule() {
             <tbody>
               {times.map(time => (
                 <tr key={time}>
-                  <td style={{padding:'8px 10px',color:'#888',fontSize:11,borderBottom:'0.5px solid rgba(0,0,0,0.05)'}}>{time}</td>
+                  <td style={{padding:'8px 10px',color:'var(--text-muted)',fontSize:11,borderBottom:'0.5px solid var(--border)'}}>{time}</td>
                   {weekDates.map((d,di) => {
                     const dateStr = d.toISOString().split('T')[0]
-                    const items = schedule.filter(s => s.scheduled_date === dateStr && (s.scheduled_time||'09:00').slice(0,2) === time.slice(0,2))
+                    const items = schedule.filter(s =>
+                      s.scheduled_date === dateStr &&
+                      (s.scheduled_time||'09:00').slice(0,2) === time.slice(0,2)
+                    )
                     return (
-                      <td key={di} style={{padding:'4px 4px',borderBottom:'0.5px solid rgba(0,0,0,0.05)',verticalAlign:'top',minHeight:36}}>
+                      <td key={di} style={{padding:'4px 4px',borderBottom:'0.5px solid var(--border)',verticalAlign:'top',minHeight:36}}>
                         {items.map(item => {
-                          const ci = projectColorMap[item.project_id] ?? 0
-                          const hasNotif = !!notifIds[item.id]
+                          const isConsultation = item._type === 'consultation'
+                          const ci = isConsultation ? 2 : (projectColorMap[item.project_id] ?? 0)
                           return (
-                            <div key={item.id} style={{background:BG[ci],color:COLORS[ci],borderRadius:6,padding:'3px 7px',fontSize:11,fontWeight:500,marginBottom:3,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',gap:4}} onClick={()=>openEdit(item)}>
-                              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                                {hasNotif ? '🔔 ' : ''}{item.projects?.name||'Visit'}
-                              </span>
-                              <span onClick={e=>{e.stopPropagation();handleDelete(item)}} style={{opacity:0.5,fontSize:10,cursor:'pointer',flexShrink:0}}>✕</span>
+                            <div key={item.id} style={{
+                              background: isConsultation ? '#FDF0DC' : BG[ci],
+                              color: isConsultation ? '#854F0B' : COLORS[ci],
+                              borderRadius:6, padding:'3px 7px', fontSize:11,
+                              fontWeight:500, marginBottom:3,
+                              borderLeft: `3px solid ${isConsultation ? '#854F0B' : COLORS[ci]}`
+                            }}>
+                              <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                {notifIds[item.id] ? '🔔 ' : ''}{item._projectName}
+                              </div>
+                              <div style={{fontSize:10,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                {item._label}
+                              </div>
                             </div>
                           )
                         })}
