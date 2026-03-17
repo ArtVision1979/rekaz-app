@@ -35,12 +35,13 @@ export default function Schedule() {
     try {
       const start = weekDates[0].toISOString().split('T')[0]
       const end = weekDates[5].toISOString().split('T')[0]
-      const [{ data: s }, p, { data: pv }] = await Promise.all([
+      const [{ data: s }, p, { data: pv }, { data: cons }] = await Promise.all([
         supabase.from('schedule_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).order('scheduled_time'),
         getProjects(),
-        supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time')
+        supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
+        supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).neq('status','cancelled').order('consultation_time')
       ])
-      // Merge schedule_visits and project_visits
+      // Merge all visit types
       const merged = [
         ...(s || []),
         ...(pv || []).map(v => ({ 
@@ -48,6 +49,14 @@ export default function Schedule() {
           _from_project_visits: true,
           scheduled_time: v.scheduled_time || '09:00',
           notes: v.title + (v.title_ar ? ' — ' + v.title_ar : '')
+        })),
+        ...(cons || []).map(c => ({
+          ...c,
+          _from_consultations: true,
+          scheduled_date: c.consultation_date,
+          scheduled_time: c.consultation_time || '09:00',
+          projects: { name: '💼 ' + c.client_name },
+          notes: c.topic
         }))
       ]
       setSchedule(merged)

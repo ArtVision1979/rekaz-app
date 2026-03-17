@@ -14,7 +14,6 @@ import Photos from './pages/Photos.jsx'
 import Drawings from './pages/Drawings.jsx'
 import Users from './pages/Users.jsx'
 import Consultations from './pages/Consultations.jsx'
-import Consultations from './pages/Consultations.jsx'
 import ProjectVisits from './pages/ProjectVisits.jsx'
 
 function PrivateRoute({ children }) {

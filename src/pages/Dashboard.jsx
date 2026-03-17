@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [openTasks, setOpenTasks] = useState([])
   const [milestones, setMilestones] = useState([])
   const [todayVisits, setTodayVisits] = useState([])
+  const [todayConsultations, setTodayConsultations] = useState([])
   const [loading, setLoading] = useState(true)
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
@@ -55,19 +56,21 @@ export default function Dashboard() {
 
   async function load() {
     try {
-      const [p, { data: visits }, { data: tasks }, { data: ms }, { data: reports }, { data: tv }] = await Promise.all([
+      const [p, { data: visits }, { data: tasks }, { data: ms }, { data: reports }, { data: tv }, { data: tc }] = await Promise.all([
         getProjects(),
         supabase.from('site_visits').select('*, projects(name)').order('visit_date', { ascending: false }).limit(5),
         supabase.from('tasks').select('*, projects(name)').in('status', ['open','in_progress']).order('due_date').limit(6),
         supabase.from('milestones').select('*, projects(name)').not('status','eq','completed').order('due_date').limit(4),
         supabase.from('reports').select('id'),
-        supabase.from('project_visits').select('*, projects(name)').eq('scheduled_date', today).in('status', ['pending','scheduled']).order('scheduled_time')
+        supabase.from('project_visits').select('*, projects(name)').eq('scheduled_date', today).in('status', ['pending','scheduled']).order('scheduled_time'),
+        supabase.from('consultations').select('*').eq('consultation_date', today).neq('status','cancelled').order('consultation_time')
       ])
       setProjects(p || [])
       setRecentVisits(visits || [])
       setOpenTasks(tasks || [])
       setMilestones(ms || [])
       setTodayVisits(tv || [])
+      setTodayConsultations(tc || [])
       const overdue = (tasks||[]).filter(t => t.due_date && t.due_date < today)
       setStats({
         total: (p||[]).length,
@@ -140,7 +143,7 @@ export default function Dashboard() {
       </div>
 
       {/* Today's Visits */}
-      {todayVisits.length > 0 && (
+      {(todayVisits.length > 0 || todayConsultations.length > 0) && (
         <div className="card" style={{marginBottom:16,border:'1px solid rgba(24,95,165,0.2)',background:'var(--blue-light)'}}>
           <div className="card-header">
             <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -150,6 +153,19 @@ export default function Dashboard() {
             <button className="btn btn-sm" onClick={()=>navigate('/project-visits')}>{t.viewAll}</button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:10}}>
+            {todayConsultations.map(c=>(
+              <div key={c.id} style={{background:'var(--bg-card)',borderRadius:10,padding:'12px 14px',border:'1px solid #EF9F27'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <div style={{fontWeight:550,fontSize:13,color:'var(--amber)'}}>💼 {c.client_name}</div>
+                  <span style={{fontSize:11,fontWeight:600,color:'var(--amber)',background:'var(--amber-light)',padding:'2px 8px',borderRadius:20,flexShrink:0,marginLeft:8}}>
+                    {c.consultation_time ? c.consultation_time.slice(0,5) : 'Today'}
+                  </span>
+                </div>
+                <div style={{fontSize:12,color:'var(--text)',marginBottom:4}}>{c.topic}</div>
+                {c.engineer_name && <div style={{fontSize:11,color:'var(--text-muted)'}}>👷 {c.engineer_name}</div>}
+                {c.client_phone && <div style={{fontSize:11,color:'#185FA5',marginTop:2}}>📞 {c.client_phone}</div>}
+              </div>
+            ))}
             {todayVisits.map(v=>(
               <div key={v.id} style={{background:'var(--bg-card)',borderRadius:10,padding:'12px 14px',border:'0.5px solid var(--border)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
