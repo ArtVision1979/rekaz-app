@@ -18,10 +18,6 @@ export default function Schedule() {
   const [schedule, setSchedule] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [editItem, setEditItem] = useState(null)
-  const [form, setForm] = useState({ project_id:'', scheduled_date:'', scheduled_time:'09:00', notes:'' })
-  const [saving, setSaving] = useState(false)
   const [notifPermission, setNotifPermission] = useState(Notification?.permission || 'default')
   const [notifBefore, setNotifBefore] = useState(60)
   const [notifIds, setNotifIds] = useState({})
@@ -103,14 +99,6 @@ export default function Schedule() {
     setShowModal(true)
   }
 
-  async function handleSave(e) {
-    e.preventDefault(); setSaving(true)
-    try {
-      if (editItem) { await supabase.from('schedule_visits').update(form).eq('id', editItem.id) }
-      else { await supabase.from('schedule_visits').insert(form) }
-      setShowModal(false); await load()
-    } catch(e){ alert(e.message) } finally { setSaving(false) }
-  }
 
   async function handleDelete(item) {
     if (!confirm('Delete this visit?')) return
@@ -193,7 +181,7 @@ export default function Schedule() {
               🔔 تفعيل التنبيهات
             </button>
           )}
-          <button className="btn btn-primary" onClick={openNew}>+ Add Visit</button>
+
         </div>
       </div>
 
