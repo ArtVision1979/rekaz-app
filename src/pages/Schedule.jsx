@@ -39,7 +39,7 @@ export default function Schedule() {
         supabase.from('schedule_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).order('scheduled_time'),
         getProjects(),
         supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
-        supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).neq('status','cancelled').order('consultation_time')
+        supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).eq('status','pending').order('consultation_time')
       ])
       // Merge all visit types
       const merged = [

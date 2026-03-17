@@ -63,7 +63,7 @@ export default function Dashboard() {
         supabase.from('milestones').select('*, projects(name)').not('status','eq','completed').order('due_date').limit(4),
         supabase.from('reports').select('id'),
         supabase.from('project_visits').select('*, projects(name)').eq('scheduled_date', today).in('status', ['pending','scheduled']).order('scheduled_time'),
-        supabase.from('consultations').select('*').eq('consultation_date', today).neq('status','cancelled').order('consultation_time')
+        supabase.from('consultations').select('*').eq('consultation_date', today).eq('status','pending').order('consultation_time')
       ])
       setProjects(p || [])
       setRecentVisits(visits || [])
