@@ -157,6 +157,7 @@ export default function Dashboard() {
               <div key={c.id} style={{background:'var(--bg-card)',borderRadius:10,padding:'12px 14px',border:'1px solid #EF9F27'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
                   <div style={{fontWeight:550,fontSize:13,color:'var(--amber)'}}>💼 {c.client_name}</div>
+                  <div style={{fontSize:10,color:'var(--amber)',background:'var(--amber-light)',padding:'1px 7px',borderRadius:20,marginTop:3,display:'inline-block'}}>استشارات هندسية</div>
                   <span style={{fontSize:11,fontWeight:600,color:'var(--amber)',background:'var(--amber-light)',padding:'2px 8px',borderRadius:20,flexShrink:0,marginLeft:8}}>
                     {c.consultation_time ? c.consultation_time.slice(0,5) : 'Today'}
                   </span>
