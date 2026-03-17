@@ -61,8 +61,19 @@ export default function Schedule() {
       ]
       setSchedule(merged)
       setProjects(p || [])
-      if (Notification?.permission === 'granted' && s?.length) {
-        const ids = scheduleAllVisits(s, notifBefore)
+      if (Notification?.permission === 'granted') {
+        // Schedule notifications for all visit types
+        const allForNotif = [
+          ...(s || []),
+          ...(cons || []).map(c => ({
+            ...c,
+            id: c.id,
+            scheduled_date: c.consultation_date,
+            scheduled_time: c.consultation_time,
+            projects: { name: '💼 ' + c.client_name }
+          }))
+        ]
+        const ids = scheduleAllVisits(allForNotif, notifBefore)
         notifIdsRef.current = ids
         setNotifIds(ids)
       }
