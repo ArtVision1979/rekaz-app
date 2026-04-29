@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getTasks, createTask, updateTask, getProjects, supabase } from '../lib/supabase.js'
 
@@ -16,10 +16,22 @@ export default function Tasks() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [filter, setFilter] = useState('all')
+  const dropdownRef = useRef(null)
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadTasks(selectedProject.id) }, [selectedProject])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+        setDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   async function loadProjects() {
     try {
@@ -144,38 +156,99 @@ export default function Tasks() {
       )}
 
       <div className="page-header">
-      <SectionHelp
-        title="Tasks — المهام المعلقة"
-        description="أي مشكلة أو ملاحظة تحتاج متابعة تضيفها هنا كمهمة. حدد الأولوية والمسؤول وتاريخ التسليم. المهام المتأخرة تظهر باللون الأحمر في Dashboard."
-        steps={['اختر المشروع', 'اضغط New Task', 'حدد الأولوية والمسؤول', 'اضغط على المربع عند الإنجاز']}
-        color="#854F0B" bg="#FAEEDA"
-      />
+        <SectionHelp
+          title="Tasks — المهام المعلقة"
+          description="أي مشكلة أو ملاحظة تحتاج متابعة تضيفها هنا كمهمة. حدد الأولوية والمسؤول وتاريخ التسليم. المهام المتأخرة تظهر باللون الأحمر في Dashboard."
+          steps={['اختر المشروع', 'اضغط New Task', 'حدد الأولوية والمسؤول', 'اضغط على المربع عند الإنجاز']}
+          color="#854F0B" bg="#FAEEDA"
+        />
         <div><h3>Tasks</h3><div className="page-sub">{openCount} open · {resolvedCount} resolved</div></div>
         <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Task</button>
       </div>
 
-      {/* Project Search */}
-      <div style={{marginBottom:10}}>
-        <input className="form-input" style={{maxWidth:280}}
-          placeholder="Search projects..."
-          value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
-      </div>
+      {/* Project Dropdown */}
+      <div style={{position:'relative',marginBottom:16,maxWidth:600}} ref={dropdownRef}>
+        <button
+          onClick={()=>setDropdownOpen(o=>!o)}
+          style={{
+            width:'100%', padding:'9px 14px',
+            border:`0.5px solid ${dropdownOpen ? '#185FA5' : 'var(--border)'}`,
+            borderRadius: dropdownOpen ? '8px 8px 0 0' : 8,
+            background:'var(--bg)', color:'var(--text)',
+            fontSize:13, cursor:'pointer',
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            textAlign:'left', transition:'border-color 0.15s'
+          }}
+        >
+          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
+            {selectedProject ? selectedProject.name : 'اختر مشروعاً...'}
+          </span>
+          {selectedProject && openCount > 0 && (
+            <span style={{fontSize:11,background:'#185FA5',color:'#fff',borderRadius:10,padding:'1px 7px',marginLeft:8,flexShrink:0}}>
+              {openCount}
+            </span>
+          )}
+          {selectedProject?.project_no && (
+            <span style={{fontSize:11,color:'var(--text-muted)',marginRight:8,marginLeft:8,whiteSpace:'nowrap'}}>
+              {selectedProject.project_no}
+            </span>
+          )}
+          <span style={{fontSize:10,color:'var(--text-muted)',flexShrink:0}}>{dropdownOpen ? '▲' : '▼'}</span>
+        </button>
 
-      {/* Project Tabs */}
-      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-        {filteredProjects.map(p=>(
-          <button key={p.id}
-            className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
-            style={{fontSize:12}}
-            onClick={()=>setSelectedProject(p)}>
-            {p.name}
-            {selectedProject?.id===p.id && tasks.length>0 && (
-              <span style={{marginLeft:6,background:'rgba(255,255,255,0.3)',borderRadius:10,padding:'1px 6px',fontSize:10}}>
-                {openCount}
-              </span>
-            )}
-          </button>
-        ))}
+        {dropdownOpen && (
+          <div style={{
+            position:'absolute', top:'100%', left:0, right:0,
+            background:'var(--bg)',
+            border:'0.5px solid #185FA5', borderTop:'none',
+            borderRadius:'0 0 8px 8px',
+            zIndex:100, boxShadow:'0 4px 16px rgba(0,0,0,0.1)'
+          }}>
+            <input
+              autoFocus
+              className="form-input"
+              style={{
+                width:'100%', borderRadius:0,
+                borderLeft:'none', borderRight:'none', borderTop:'none',
+                borderBottom:'0.5px solid var(--border)',
+                boxSizing:'border-box', fontSize:13
+              }}
+              placeholder="ابحث باسم المشروع أو الرقم..."
+              value={projectSearch}
+              onChange={e=>setProjectSearch(e.target.value)}
+            />
+            <div style={{maxHeight:260,overflowY:'auto'}}>
+              {filteredProjects.length === 0
+                ? <div style={{padding:'10px 14px',fontSize:13,color:'var(--text-muted)'}}>لا توجد نتائج</div>
+                : filteredProjects.map(p => (
+                  <div
+                    key={p.id}
+                    onClick={()=>{setSelectedProject(p);setDropdownOpen(false);setProjectSearch('')}}
+                    style={{
+                      padding:'9px 14px', fontSize:13, cursor:'pointer',
+                      borderBottom:'0.5px solid var(--border)',
+                      background: selectedProject?.id===p.id ? '#E6F1FB' : 'transparent',
+                      color: selectedProject?.id===p.id ? '#0C447C' : 'var(--text)',
+                    }}
+                  >
+                    <div style={{fontWeight: selectedProject?.id===p.id ? 500 : 400,
+                      whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                      {p.name}
+                    </div>
+                    {p.project_no && (
+                      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
+                        {p.project_no}{p.location ? ` · ${p.location}` : ''}
+                      </div>
+                    )}
+                  </div>
+                ))
+              }
+            </div>
+            <div style={{padding:'6px 14px',fontSize:11,color:'var(--text-muted)',borderTop:'0.5px solid var(--border)'}}>
+              {filteredProjects.length} مشروع
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedProject && (
