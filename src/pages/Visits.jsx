@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
 import { useEngineers } from '../hooks/useEngineers.js'
@@ -28,20 +28,31 @@ export default function Visits() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [showChecklist, setShowChecklist] = useState(null)
   const [checklist, setChecklist] = useState([])
   const [checklistResults, setChecklistResults] = useState({})
   const [checklistNotes, setChecklistNotes] = useState({})
   const [editingNote, setEditingNote] = useState(null)
+  const dropdownRef = useRef(null)
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+        setDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   async function loadProjects() {
     try {
       const p = await getProjects()
       setProjects(p || [])
-
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
@@ -62,14 +73,14 @@ export default function Visits() {
     setShowChecklist(visit)
     const fullNotes = visit.notes?.trim() || ''
     const shortType = visit.notes?.split(' — ')[0]?.trim() || ''
-    
+
     const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
     const { data: results } = await supabase.from('visit_checklist_results').select('*').eq('visit_id', visit.id)
-    
+
     let clData = []
     if (allItems?.length) {
       const types = [...new Set(allItems.map(i => i.visit_type))]
-      const bestMatch = 
+      const bestMatch =
         types.find(t => t === fullNotes) ||
         types.find(t => t === shortType) ||
         types.find(t => fullNotes.toLowerCase().includes(t.toLowerCase())) ||
@@ -77,7 +88,7 @@ export default function Visits() {
       if (bestMatch) clData = allItems.filter(i => i.visit_type === bestMatch)
     }
     setChecklist(clData)
-    
+
     const resultsMap = {}
     ;(results || []).forEach(r => { resultsMap[r.checklist_item_id] = r })
     setChecklistResults(resultsMap)
@@ -122,8 +133,6 @@ export default function Visits() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      // Save engineer name
-
       if (editVisit) {
         await supabase.from('site_visits').update(form).eq('id', editVisit.id)
       } else {
@@ -212,7 +221,7 @@ export default function Visits() {
             ) : (
               <>
                 <div style={{marginBottom:8,fontSize:12,color:'var(--text-muted)'}}>
-                  ✓ {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass · 
+                  ✓ {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass ·
                   ✗ {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail ·
                   — {Object.values(checklistResults).filter(r=>r.result==='na').length} N/A
                 </div>
@@ -274,31 +283,94 @@ export default function Visits() {
       )}
 
       <div className="page-header">
-      <SectionHelp
-        title="Site Visits — تقارير زيارات الموقع"
-        description="كل مرة تزور الموقع سجّل تقريراً هنا. اكتب ملاحظاتك وحدد درجة الخطورة. هذا التقرير يُرسل للعميل ويحفظ كسجل رسمي للمشروع."
-        steps={['اختر المشروع', 'اضغط New Visit', 'سجّل ملاحظاتك وحدد الخطورة', 'اطبع التقرير PDF من صفحة Reports']}
-        color="#0F6E56" bg="#E1F5EE"
-      />
+        <SectionHelp
+          title="Site Visits — تقارير زيارات الموقع"
+          description="كل مرة تزور الموقع سجّل تقريراً هنا. اكتب ملاحظاتك وحدد درجة الخطورة. هذا التقرير يُرسل للعميل ويحفظ كسجل رسمي للمشروع."
+          steps={['اختر المشروع', 'اضغط New Visit', 'سجّل ملاحظاتك وحدد الخطورة', 'اطبع التقرير PDF من صفحة Reports']}
+          color="#0F6E56" bg="#E1F5EE"
+        />
         <div><h3>Site Visits</h3><div className="page-sub">{visits.length} visits · {draftCount} draft · {approvedCount} approved</div></div>
         <button className="btn btn-primary" onClick={openNew} disabled={!selectedProject}>+ New Visit</button>
       </div>
 
-      <div style={{marginBottom:10}}>
-        <input className="form-input" style={{maxWidth:280}}
-          placeholder="Search projects..."
-          value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
-      </div>
+      {/* Project Dropdown */}
+      <div style={{position:'relative',marginBottom:16,maxWidth:600}} ref={dropdownRef}>
+        <button
+          onClick={()=>setDropdownOpen(o=>!o)}
+          style={{
+            width:'100%', padding:'9px 14px',
+            border:`0.5px solid ${dropdownOpen ? '#185FA5' : 'var(--border)'}`,
+            borderRadius: dropdownOpen ? '8px 8px 0 0' : 8,
+            background:'var(--bg)', color:'var(--text)',
+            fontSize:13, cursor:'pointer',
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            textAlign:'left', transition:'border-color 0.15s'
+          }}
+        >
+          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
+            {selectedProject ? selectedProject.name : 'اختر مشروعاً...'}
+          </span>
+          {selectedProject?.project_no && (
+            <span style={{fontSize:11,color:'var(--text-muted)',marginRight:8,marginLeft:8,whiteSpace:'nowrap'}}>
+              {selectedProject.project_no}
+            </span>
+          )}
+          <span style={{fontSize:10,color:'var(--text-muted)',flexShrink:0}}>{dropdownOpen ? '▲' : '▼'}</span>
+        </button>
 
-      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-        {filteredProjects.map(p=>(
-          <button key={p.id}
-            className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
-            style={{fontSize:12}}
-            onClick={()=>setSelectedProject(p)}>
-            {p.name}
-          </button>
-        ))}
+        {dropdownOpen && (
+          <div style={{
+            position:'absolute', top:'100%', left:0, right:0,
+            background:'var(--bg)',
+            border:'0.5px solid #185FA5', borderTop:'none',
+            borderRadius:'0 0 8px 8px',
+            zIndex:100, boxShadow:'0 4px 16px rgba(0,0,0,0.1)'
+          }}>
+            <input
+              autoFocus
+              className="form-input"
+              style={{
+                width:'100%', borderRadius:0,
+                borderLeft:'none', borderRight:'none', borderTop:'none',
+                borderBottom:'0.5px solid var(--border)',
+                boxSizing:'border-box', fontSize:13
+              }}
+              placeholder="ابحث باسم المشروع أو الرقم..."
+              value={projectSearch}
+              onChange={e=>setProjectSearch(e.target.value)}
+            />
+            <div style={{maxHeight:260,overflowY:'auto'}}>
+              {filteredProjects.length === 0
+                ? <div style={{padding:'10px 14px',fontSize:13,color:'var(--text-muted)'}}>لا توجد نتائج</div>
+                : filteredProjects.map(p => (
+                  <div
+                    key={p.id}
+                    onClick={()=>{setSelectedProject(p);setDropdownOpen(false);setProjectSearch('')}}
+                    style={{
+                      padding:'9px 14px', fontSize:13, cursor:'pointer',
+                      borderBottom:'0.5px solid var(--border)',
+                      background: selectedProject?.id===p.id ? '#E6F1FB' : 'transparent',
+                      color: selectedProject?.id===p.id ? '#0C447C' : 'var(--text)',
+                    }}
+                  >
+                    <div style={{fontWeight: selectedProject?.id===p.id ? 500 : 400,
+                      whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                      {p.name}
+                    </div>
+                    {p.project_no && (
+                      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
+                        {p.project_no}{p.location ? ` · ${p.location}` : ''}
+                      </div>
+                    )}
+                  </div>
+                ))
+              }
+            </div>
+            <div style={{padding:'6px 14px',fontSize:11,color:'var(--text-muted)',borderTop:'0.5px solid var(--border)'}}>
+              {filteredProjects.length} مشروع
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedProject && (
