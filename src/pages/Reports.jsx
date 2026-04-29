@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase } from '../lib/supabase.js'
 
 export function Reports() {
@@ -10,13 +10,24 @@ export function Reports() {
   const [checklistResults, setChecklistResults] = useState({})
   const [photos, setPhotos] = useState([])
   const [projectSearch, setProjectSearch] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notes, setNotes] = useState('')
+  const dropdownRef = useRef(null)
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
   useEffect(() => { if (selectedVisit) loadVisitData(selectedVisit) }, [selectedVisit])
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+        setDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   async function loadProjects() {
     try {
@@ -37,27 +48,21 @@ export function Reports() {
   }
 
   async function loadVisitData(visit) {
-    // Load all checklist items and find best match
     const fullNotes = visit.notes?.trim() || ''
     const shortType = visit.notes?.split(' — ')[0]?.trim() || ''
-    
+
     const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
-    
+
     let clData = null
     if (allItems?.length) {
       const types = [...new Set(allItems.map(i => i.visit_type))]
-      
-      // Try: 1) exact full match, 2) exact short match, 3) partial match
-      const bestMatch = 
+      const bestMatch =
         types.find(t => t === fullNotes) ||
         types.find(t => t === shortType) ||
         types.find(t => fullNotes.toLowerCase().includes(t.toLowerCase())) ||
         types.find(t => t.toLowerCase().includes(shortType.toLowerCase())) ||
         types.find(t => shortType.toLowerCase().includes(t.split(' — ')[0]?.toLowerCase()))
-      
-      if (bestMatch) {
-        clData = allItems.filter(i => i.visit_type === bestMatch)
-      }
+      if (bestMatch) clData = allItems.filter(i => i.visit_type === bestMatch)
     }
 
     const [{ data: results }, { data: ph }] = await Promise.all([
@@ -68,7 +73,6 @@ export function Reports() {
     setChecklist(clData || [])
     setNotes(visit.notes || '')
 
-    // Map results
     const resultsMap = {}
     ;(results || []).forEach(r => { resultsMap[r.checklist_item_id] = r })
     setChecklistResults(resultsMap)
@@ -87,10 +91,7 @@ export function Reports() {
         item_text: itemText,
         result
       }).select().single()
-      if (data) {
-        setChecklistResults(prev => ({ ...prev, [itemId]: data }))
-        return
-      }
+      if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
     }
     setChecklistResults(prev => ({
       ...prev,
@@ -107,7 +108,6 @@ export function Reports() {
     if (!selectedVisit || !selectedProject) return
     setSaving(true)
     try {
-      // Save report record
       const reportNo = `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
       await supabase.from('reports').insert({
         report_no: reportNo,
@@ -115,7 +115,6 @@ export function Reports() {
         project_id: selectedProject.id,
       })
 
-      // Open print window
       const passCount = Object.values(checklistResults).filter(r => r.result === 'pass').length
       const failCount = Object.values(checklistResults).filter(r => r.result === 'fail').length
       const naCount = Object.values(checklistResults).filter(r => r.result === 'na').length
@@ -169,7 +168,6 @@ export function Reports() {
           body { font-family: Arial, sans-serif; padding: 36px; color: #111; font-size: 13px; }
           .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #185FA5; padding-bottom: 16px; margin-bottom: 20px; }
           .section { border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; }
           .info-row { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
           .info-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
           .info-value { font-size: 13px; font-weight: 500; }
@@ -178,11 +176,9 @@ export function Reports() {
           .sig-line { border-top: 1.5px solid #333; padding-top: 8px; margin-top: 48px; text-align: center; font-size: 12px; }
           .sig-name { font-size: 11px; color: #888; margin-top: 3px; }
           .footer { border-top: 1px solid #eee; margin-top: 28px; padding-top: 10px; text-align: center; font-size: 10px; color: #bbb; }
-          .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
           @media print { body { padding: 20px; } .no-print { display: none !important; } }
         </style>
         </head><body>
-
         <div class="header">
           <div>
             <img src="/rekaz-logo.jpg" style="height:44px;width:auto;" onerror="this.style.display='none'"/>
@@ -194,7 +190,6 @@ export function Reports() {
             <div style="font-size:11px;color:#aaa;margin-top:2px;">${today}</div>
           </div>
         </div>
-
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
           <div class="section" style="background:#f5f5f0;">
             <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">معلومات المشروع · Project</div>
@@ -210,31 +205,25 @@ export function Reports() {
             <div class="info-row"><div class="info-label">Severity</div><div class="info-value">${selectedVisit.severity||'—'}</div></div>
           </div>
         </div>
-
         ${selectedVisit.notes ? `
         <div class="section" style="background:#fafafa;border:0.5px solid #eee;margin-bottom:14px;">
           <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div>
           <div style="font-size:13px;line-height:1.6;">${selectedVisit.notes}</div>
         </div>
         ` : ''}
-
         ${checklistHtml}
-
         ${photos.length > 0 ? `
         <div style="margin-bottom:20px;">
           <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div>
           <div class="photos-grid">${photoHtml}</div>
         </div>
         ` : ''}
-
         <div class="sigs">
           <div><div class="sig-line">المهندس المشرف · Engineer<div class="sig-name">${selectedProject.engineer_name||'—'}</div></div></div>
           <div><div class="sig-line">المقاول · Contractor<div class="sig-name">${selectedProject.contractor_name||'—'}</div></div></div>
           <div><div class="sig-line">المالك · Client<div class="sig-name">${selectedProject.client_name||'—'}</div></div></div>
         </div>
-
         <div class="footer">مكتب ركاز للهندسة · Rekaz Engineering Office · 📞 17666882 · 📱 32277704 · 📷 rekaz.engineeringbh · ${today}</div>
-
         <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
           <button onclick="window.print()" style="background:#185FA5;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">🖨 Print</button>
           <button onclick="window.close()" style="background:#f5f5f0;color:#333;border:1px solid #ddd;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;">✕ Close</button>
@@ -244,7 +233,6 @@ export function Reports() {
       w.document.close()
       w.focus()
       setTimeout(() => { w.print() }, 800)
-
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
 
@@ -268,18 +256,84 @@ export function Reports() {
         )}
       </div>
 
-      <div style={{marginBottom:10}}>
-        <input className="form-input" style={{maxWidth:280}} placeholder="Search projects..."
-          value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}/>
-      </div>
+      {/* Project Dropdown */}
+      <div style={{position:'relative',marginBottom:16,maxWidth:600}} ref={dropdownRef}>
+        <button
+          onClick={()=>setDropdownOpen(o=>!o)}
+          style={{
+            width:'100%', padding:'9px 14px',
+            border:`0.5px solid ${dropdownOpen ? '#185FA5' : 'var(--border)'}`,
+            borderRadius: dropdownOpen ? '8px 8px 0 0' : 8,
+            background:'var(--bg)', color:'var(--text)',
+            fontSize:13, cursor:'pointer',
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            textAlign:'left', transition:'border-color 0.15s'
+          }}
+        >
+          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
+            {selectedProject ? selectedProject.name : 'اختر مشروعاً...'}
+          </span>
+          {selectedProject?.project_no && (
+            <span style={{fontSize:11,color:'var(--text-muted)',marginRight:8,marginLeft:8,whiteSpace:'nowrap'}}>
+              {selectedProject.project_no}
+            </span>
+          )}
+          <span style={{fontSize:10,color:'var(--text-muted)',flexShrink:0}}>{dropdownOpen ? '▲' : '▼'}</span>
+        </button>
 
-      <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-        {filteredProjects.map(p=>(
-          <button key={p.id} className={`btn ${selectedProject?.id===p.id?'btn-primary':''}`}
-            style={{fontSize:12}} onClick={()=>setSelectedProject(p)}>
-            {p.name}
-          </button>
-        ))}
+        {dropdownOpen && (
+          <div style={{
+            position:'absolute', top:'100%', left:0, right:0,
+            background:'var(--bg)',
+            border:'0.5px solid #185FA5', borderTop:'none',
+            borderRadius:'0 0 8px 8px',
+            zIndex:100, boxShadow:'0 4px 16px rgba(0,0,0,0.1)'
+          }}>
+            <input
+              autoFocus
+              className="form-input"
+              style={{
+                width:'100%', borderRadius:0,
+                borderLeft:'none', borderRight:'none', borderTop:'none',
+                borderBottom:'0.5px solid var(--border)',
+                boxSizing:'border-box', fontSize:13
+              }}
+              placeholder="ابحث باسم المشروع أو الرقم..."
+              value={projectSearch}
+              onChange={e=>setProjectSearch(e.target.value)}
+            />
+            <div style={{maxHeight:260,overflowY:'auto'}}>
+              {filteredProjects.length === 0
+                ? <div style={{padding:'10px 14px',fontSize:13,color:'var(--text-muted)'}}>لا توجد نتائج</div>
+                : filteredProjects.map(p => (
+                  <div
+                    key={p.id}
+                    onClick={()=>{setSelectedProject(p);setDropdownOpen(false);setProjectSearch('')}}
+                    style={{
+                      padding:'9px 14px', fontSize:13, cursor:'pointer',
+                      borderBottom:'0.5px solid var(--border)',
+                      background: selectedProject?.id===p.id ? '#E6F1FB' : 'transparent',
+                      color: selectedProject?.id===p.id ? '#0C447C' : 'var(--text)',
+                    }}
+                  >
+                    <div style={{fontWeight: selectedProject?.id===p.id ? 500 : 400,
+                      whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                      {p.name}
+                    </div>
+                    {p.project_no && (
+                      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
+                        {p.project_no}{p.location ? ` · ${p.location}` : ''}
+                      </div>
+                    )}
+                  </div>
+                ))
+              }
+            </div>
+            <div style={{padding:'6px 14px',fontSize:11,color:'var(--text-muted)',borderTop:'0.5px solid var(--border)'}}>
+              {filteredProjects.length} مشروع
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedProject && (
@@ -332,7 +386,6 @@ export function Reports() {
                 )}
               </div>
 
-              {/* Checklist */}
               {checklist.length > 0 && (
                 <div className="card" style={{marginBottom:16}}>
                   <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>
@@ -368,7 +421,6 @@ export function Reports() {
                 </div>
               )}
 
-              {/* Photos */}
               {photos.length > 0 && (
                 <div className="card">
                   <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>Photos ({photos.length})</div>
