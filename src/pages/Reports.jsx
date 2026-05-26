@@ -170,6 +170,14 @@ export function Reports() {
   // ── Single visit report ──────────────────────────────────────────────
   async function generateReport() {
     if (!selectedVisit || !selectedProject) return
+    // تنبيه إذا في نقاط لم تُحدد
+    const pendingCount = checklist.filter(i => !checklistResults[i.id] || checklistResults[i.id].result === 'pending').length
+    if (pendingCount > 0) {
+      const proceed = confirm(`⚠️ تنبيه: يوجد ${pendingCount} نقطة لم يتم تحديد نتيجتها بعد.
+
+هل تريد المتابعة وطباعة التقرير؟`)
+      if (!proceed) return
+    }
     setSaving(true)
     try {
       const reportNo = `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
