@@ -18,6 +18,59 @@ function EngineerSelect({ value, onChange }) {
   )
 }
 
+// ── Checklist Item Row ───────────────────────────────────────────────
+function ChecklistItem({ item, index, result, hasNote, editingNote, onResult, onToggleNote, onSaveNote }) {
+  const colors = { pass:'#0F6E56', fail:'#A32D2D', na:'#888', pending:'#aaa' }
+  const bgs    = { pass:'#E1F5EE', fail:'#FCEBEB', na:'#f5f5f0', pending:'#f5f5f0' }
+  return (
+    <div style={{padding:'8px 0', borderBottom:'0.5px solid var(--border)'}}>
+      <div style={{display:'flex', alignItems:'center', gap:10}}>
+        <span style={{fontSize:11, color:'var(--text-muted)', width:20, flexShrink:0}}>{index}</span>
+        <div style={{flex:1, fontSize:13}}>{item.item}</div>
+        <div style={{display:'flex', gap:5, alignItems:'center'}}>
+          {['pass','fail','na'].map(r => (
+            <button key={r} onClick={() => onResult(item.id, item.item, r)}
+              style={{padding:'3px 8px', borderRadius:20, border:'none', cursor:'pointer', fontSize:11, fontWeight:500,
+                background: result===r ? bgs[r] : 'var(--bg)',
+                color: result===r ? colors[r] : 'var(--text-muted)',
+                outline: result===r ? `1.5px solid ${colors[r]}` : 'none'}}>
+              {r==='pass' ? '✓' : r==='fail' ? '✗' : '—'}
+            </button>
+          ))}
+          <button onClick={() => onToggleNote(item.id)}
+            style={{padding:'3px 8px', borderRadius:20, border:'none', cursor:'pointer', fontSize:11,
+              background: hasNote ? '#FAEEDA' : 'var(--bg)',
+              color: hasNote ? '#854F0B' : 'var(--text-muted)'}}>
+            💬
+          </button>
+        </div>
+      </div>
+      {hasNote && editingNote !== item.id && (
+        <div style={{marginTop:6, marginRight:30, fontSize:12, color:'#854F0B', background:'#FAEEDA', borderRadius:6, padding:'4px 10px'}}>
+          {hasNote}
+        </div>
+      )}
+      {editingNote === item.id && (
+        <div style={{marginTop:8, marginRight:30, display:'flex', gap:8}}>
+          <input className="form-input" style={{flex:1, fontSize:12}}
+            defaultValue={hasNote || ''}
+            placeholder="Add note or reason..."
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Enter') onSaveNote(item.id, item.item, e.target.value)
+              if (e.key === 'Escape') onToggleNote(null)
+            }}
+            id={`note-${item.id}`}/>
+          <button className="btn btn-sm btn-primary"
+            onClick={() => onSaveNote(item.id, item.item, document.getElementById(`note-${item.id}`).value)}>
+            Save
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Visits() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
@@ -32,14 +85,12 @@ export default function Visits() {
   const [showChecklist, setShowChecklist] = useState(null)
   const [checklist, setChecklist] = useState([])
   const [checklistResults, setChecklistResults] = useState({})
-  const [checklistNotes, setChecklistNotes] = useState({})
   const [editingNote, setEditingNote] = useState(null)
   const dropdownRef = useRef(null)
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClick(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target))
@@ -154,8 +205,15 @@ export default function Visits() {
     (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())
   )
 
-  const draftCount = visits.filter(v => v.status === 'draft').length
+  const draftCount    = visits.filter(v => v.status === 'draft').length
   const approvedCount = visits.filter(v => v.status === 'approved').length
+
+  // فصل نقاط الفحص عن التوصيات
+  const inspectionItems    = checklist.filter(i => i.item_type !== 'recommendation')
+  const recommendationItems = checklist.filter(i => i.item_type === 'recommendation')
+  const passCount = Object.values(checklistResults).filter(r => r.result === 'pass').length
+  const failCount = Object.values(checklistResults).filter(r => r.result === 'fail').length
+  const naCount   = Object.values(checklistResults).filter(r => r.result === 'na').length
 
   return (
     <>
@@ -216,66 +274,67 @@ export default function Visits() {
             <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:14}}>
               {showChecklist.notes?.split(' — ')[0]||'Site Visit'}
             </div>
+
             {checklist.length === 0 ? (
               <div style={{color:'var(--text-muted)',fontSize:13,padding:'16px 0'}}>No checklist available for this visit type.</div>
             ) : (
               <>
-                <div style={{marginBottom:8,fontSize:12,color:'var(--text-muted)'}}>
-                  ✓ {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass ·
-                  ✗ {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail ·
-                  — {Object.values(checklistResults).filter(r=>r.result==='na').length} N/A
+                {/* ملخص */}
+                <div style={{marginBottom:12,fontSize:12,color:'var(--text-muted)'}}>
+                  ✓ {passCount} Pass · ✗ {failCount} Fail · — {naCount} N/A
                 </div>
-                {checklist.map((item,i)=>{
-                  const result = checklistResults[item.id]?.result || 'pending'
-                  const colors = {pass:'#0F6E56',fail:'#A32D2D',na:'#888',pending:'#aaa'}
-                  const bgs = {pass:'#E1F5EE',fail:'#FCEBEB',na:'#f5f5f0',pending:'#f5f5f0'}
-                  return (
-                    <div key={item.id} style={{padding:'8px 0',borderBottom:'0.5px solid var(--border)'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <span style={{fontSize:11,color:'var(--text-muted)',width:20,flexShrink:0}}>{i+1}</span>
-                        <div style={{flex:1,fontSize:13}}>{item.item}</div>
-                        <div style={{display:'flex',gap:5,alignItems:'center'}}>
-                          {['pass','fail','na'].map(r=>(
-                            <button key={r} onClick={()=>saveChecklistResult(item.id,item.item,r)}
-                              style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:500,
-                                background:result===r?bgs[r]:'var(--bg)',color:result===r?colors[r]:'var(--text-muted)',
-                                outline:result===r?`1.5px solid ${colors[r]}`:'none'}}>
-                              {r==='pass'?'✓':r==='fail'?'✗':'—'}
-                            </button>
-                          ))}
-                          <button onClick={()=>setEditingNote(editingNote===item.id?null:item.id)}
-                            style={{padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,
-                              background:checklistResults[item.id]?.notes?'#FAEEDA':'var(--bg)',
-                              color:checklistResults[item.id]?.notes?'#854F0B':'var(--text-muted)'}}>
-                            💬
-                          </button>
-                        </div>
-                      </div>
-                      {checklistResults[item.id]?.notes && editingNote !== item.id && (
-                        <div style={{marginTop:6,marginRight:30,fontSize:12,color:'#854F0B',background:'#FAEEDA',borderRadius:6,padding:'4px 10px'}}>
-                          {checklistResults[item.id].notes}
-                        </div>
-                      )}
-                      {editingNote === item.id && (
-                        <div style={{marginTop:8,marginRight:30,display:'flex',gap:8}}>
-                          <input className="form-input" style={{flex:1,fontSize:12}}
-                            defaultValue={checklistResults[item.id]?.notes||''}
-                            placeholder="Add note or reason..."
-                            autoFocus
-                            onKeyDown={e=>{
-                              if(e.key==='Enter') saveNote(item.id,item.item,e.target.value)
-                              if(e.key==='Escape') setEditingNote(null)
-                            }}
-                            id={`note-${item.id}`}/>
-                          <button className="btn btn-sm btn-primary"
-                            onClick={()=>saveNote(item.id,item.item,document.getElementById(`note-${item.id}`).value)}>
-                            Save
-                          </button>
-                        </div>
-                      )}
+
+                {/* نقاط الفحص */}
+                {inspectionItems.length > 0 && (
+                  <>
+                    <div style={{fontSize:11,fontWeight:700,color:'#185FA5',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>
+                      نقاط الفحص · Inspection Items
                     </div>
-                  )
-                })}
+                    {inspectionItems.map((item, i) => (
+                      <ChecklistItem
+                        key={item.id}
+                        item={item}
+                        index={i + 1}
+                        result={checklistResults[item.id]?.result || 'pending'}
+                        hasNote={checklistResults[item.id]?.notes}
+                        editingNote={editingNote}
+                        onResult={(id, text, r) => saveChecklistResult(id, text, r)}
+                        onToggleNote={(id) => setEditingNote(editingNote === id ? null : id)}
+                        onSaveNote={saveNote}
+                      />
+                    ))}
+                  </>
+                )}
+
+                {/* التوصيات */}
+                {recommendationItems.length > 0 && (
+                  <div style={{marginTop:16}}>
+                    <div style={{
+                      fontSize:11, fontWeight:700, color:'#854F0B',
+                      textTransform:'uppercase', letterSpacing:'0.5px',
+                      marginBottom:4, display:'flex', alignItems:'center', gap:6
+                    }}>
+                      <span style={{background:'#FAEEDA',borderRadius:4,padding:'2px 8px'}}>
+                        ⚠️ توصيات ما بعد الصب · Recommendations
+                      </span>
+                    </div>
+                    <div style={{background:'#FFFBF5',borderRadius:8,border:'0.5px solid #F0D9B5',padding:'0 12px',marginTop:6}}>
+                      {recommendationItems.map((item, i) => (
+                        <ChecklistItem
+                          key={item.id}
+                          item={item}
+                          index={i + 1}
+                          result={checklistResults[item.id]?.result || 'pending'}
+                          hasNote={checklistResults[item.id]?.notes}
+                          editingNote={editingNote}
+                          onResult={(id, text, r) => saveChecklistResult(id, text, r)}
+                          onToggleNote={(id) => setEditingNote(editingNote === id ? null : id)}
+                          onSaveNote={saveNote}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -326,42 +385,22 @@ export default function Visits() {
             borderRadius:'0 0 8px 8px',
             zIndex:100, boxShadow:'0 4px 16px rgba(0,0,0,0.1)'
           }}>
-            <input
-              autoFocus
-              className="form-input"
-              style={{
-                width:'100%', borderRadius:0,
-                borderLeft:'none', borderRight:'none', borderTop:'none',
-                borderBottom:'0.5px solid var(--border)',
-                boxSizing:'border-box', fontSize:13
-              }}
+            <input autoFocus className="form-input"
+              style={{width:'100%',borderRadius:0,borderLeft:'none',borderRight:'none',borderTop:'none',borderBottom:'0.5px solid var(--border)',boxSizing:'border-box',fontSize:13}}
               placeholder="ابحث باسم المشروع أو الرقم..."
-              value={projectSearch}
-              onChange={e=>setProjectSearch(e.target.value)}
+              value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}
             />
             <div style={{maxHeight:260,overflowY:'auto'}}>
               {filteredProjects.length === 0
                 ? <div style={{padding:'10px 14px',fontSize:13,color:'var(--text-muted)'}}>لا توجد نتائج</div>
                 : filteredProjects.map(p => (
-                  <div
-                    key={p.id}
+                  <div key={p.id}
                     onClick={()=>{setSelectedProject(p);setDropdownOpen(false);setProjectSearch('')}}
-                    style={{
-                      padding:'9px 14px', fontSize:13, cursor:'pointer',
-                      borderBottom:'0.5px solid var(--border)',
-                      background: selectedProject?.id===p.id ? '#E6F1FB' : 'transparent',
-                      color: selectedProject?.id===p.id ? '#0C447C' : 'var(--text)',
-                    }}
-                  >
-                    <div style={{fontWeight: selectedProject?.id===p.id ? 500 : 400,
-                      whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                      {p.name}
-                    </div>
-                    {p.project_no && (
-                      <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>
-                        {p.project_no}{p.location ? ` · ${p.location}` : ''}
-                      </div>
-                    )}
+                    style={{padding:'9px 14px',fontSize:13,cursor:'pointer',borderBottom:'0.5px solid var(--border)',
+                      background:selectedProject?.id===p.id?'#E6F1FB':'transparent',
+                      color:selectedProject?.id===p.id?'#0C447C':'var(--text)'}}>
+                    <div style={{fontWeight:selectedProject?.id===p.id?500:400,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.name}</div>
+                    {p.project_no && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{p.project_no}{p.location?` · ${p.location}`:''}</div>}
                   </div>
                 ))
               }
