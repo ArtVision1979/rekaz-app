@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [todayVisits, setTodayVisits] = useState([])
   const [todayConsultations, setTodayConsultations] = useState([])
   const [myVisits, setMyVisits] = useState([])
+  const [attention, setAttention] = useState({ overdue: [], noReport: 0, notSent: 0 })
   const [loading, setLoading] = useState(true)
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
@@ -55,6 +56,27 @@ export default function Dashboard() {
   useEffect(() => {
     setBackupNeeded(checkBackupNeeded())
     load()
+  }, [])
+
+  // فجوات الإشراف — كانت غير مرئية تماماً: زيارات فات موعدها منذ
+  // أشهر، وزيارات بلا تقرير، وتقارير صدرت ولم تصل العميل.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const [{ data: od }, { data: sv }, { data: reps }] = await Promise.all([
+        supabase.from('project_visits').select('id, title, scheduled_date, engineer_name, projects(name)')
+          .eq('status','scheduled').lt('scheduled_date', today)
+          .order('scheduled_date').limit(5),
+        supabase.from('site_visits').select('id'),
+        supabase.from('reports').select('visit_id, last_sent_at')
+      ])
+      if (!alive) return
+      const withReport = new Set((reps||[]).map(r => r.visit_id).filter(Boolean))
+      const noReport = (sv||[]).filter(v => !withReport.has(v.id)).length
+      const notSent  = (reps||[]).filter(r => !r.last_sent_at).length
+      setAttention({ overdue: od || [], noReport, notSent })
+    })().catch(e => console.error('تعذّر حساب الفجوات:', e?.message ?? e))
+    return () => { alive = false }
   }, [])
 
   // «زياراتي» — يعتمد على engineer_id، وهو الربط الذي صار متاحاً بعد
@@ -164,6 +186,52 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* فجوات الإشراف — ما يحتاج انتباهاً الآن */}
+      {(attention.overdue.length > 0 || attention.noReport > 0 || attention.notSent > 0) && (
+        <div className="card" style={{marginBottom:16,border:'1px solid rgba(163,45,45,.25)',background:'var(--red-light,#FCEBEB)'}}>
+          <div className="card-header">
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:18}}>⚠</span>
+              <span className="card-title" style={{color:'#A32D2D'}}>يحتاج انتباهك</span>
+            </div>
+          </div>
+
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:attention.overdue.length?14:0}}>
+            {attention.noReport > 0 && (
+              <div onClick={()=>navigate('/reports')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
+                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.noReport}</div>
+                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>زيارة بلا تقرير</div>
+              </div>
+            )}
+            {attention.notSent > 0 && (
+              <div onClick={()=>navigate('/reports')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
+                <div style={{fontSize:22,fontWeight:600,color:'#854F0B'}}>{attention.notSent}</div>
+                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>تقرير لم يُرسل للعميل</div>
+              </div>
+            )}
+            {attention.overdue.length > 0 && (
+              <div onClick={()=>navigate('/project-visits')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
+                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.overdue.length}+</div>
+                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>زيارة فات موعدها</div>
+              </div>
+            )}
+          </div>
+
+          {attention.overdue.map(v=>{
+            const days = Math.floor((new Date(today) - new Date(v.scheduled_date)) / 86400000)
+            return (
+              <div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',borderTop:'0.5px solid rgba(0,0,0,.06)',fontSize:12.5}}>
+                <span style={{fontWeight:600,color:'#A32D2D',minWidth:70}}>{days} يوماً</span>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {v.title} — {v.projects?.name || '—'}
+                </span>
+                <span style={{fontSize:11,color:'var(--text-muted)'}}>{v.engineer_name || 'بلا مهندس'}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* زياراتي — الزيارات المسندة للمستخدم الحالي عبر engineer_id */}
       {me && myVisits.length > 0 && (

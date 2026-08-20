@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
+import { useCurrentUser } from '../hooks/useCurrentUser.js'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
 function buildChecklistHtml(cl, res) {
@@ -61,6 +62,11 @@ function buildChecklistHtml(cl, res) {
 }
 
 export function Reports() {
+  // تقرير الزيارة المختارة وحالة تسليمه للعميل
+  const [existingReport, setExistingReport] = useState(null)
+  const [sending, setSending] = useState('')
+  const { user: me } = useCurrentUser()
+
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
   const [visits, setVisits] = useState([])
@@ -105,7 +111,72 @@ export function Reports() {
     if (data?.length) setSelectedVisit(data[data.length - 1])
   }
 
+  // التقرير السابق لهذه الزيارة — وجوده يمنع إنشاء نسخة مكرّرة
+  async function loadReportFor(visitId) {
+    if (!visitId) { setExistingReport(null); return }
+    const { data, error } = await supabase.from('reports')
+      .select('*').eq('visit_id', visitId)
+      .order('created_at', { ascending: false }).limit(1)
+    if (error) { console.error('تعذّر جلب التقرير:', error.message); return }
+    setExistingReport(data?.[0] || null)
+  }
+
+  // رقم الجوال البحريني يُخزَّن بثماني خانات — واتساب يحتاج رمز الدولة
+  function waNumber(raw) {
+    const d = String(raw || '').replace(/\D/g, '')
+    if (!d) return ''
+    if (d.startsWith('973')) return d
+    if (d.length === 8) return '973' + d
+    return d
+  }
+
+  async function sendViaWhatsapp() {
+    const rep = existingReport
+    if (!rep) return alert('أصدر التقرير أولاً.')
+    const phone = waNumber(selectedProject?.client_phone)
+    if (!phone) return alert('لا يوجد رقم جوال للعميل في بيانات المشروع.')
+
+    const lines = [
+      `تقرير زيارة موقع — مكتب ركاز للهندسة`,
+      `المشروع: ${selectedProject?.name || ''}`,
+      `رقم التقرير: ${rep.report_no}`,
+      rep.pdf_path ? `\nرابط التقرير:\n${rep.pdf_path}` : ''
+    ].filter(Boolean).join('\n')
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(lines)}`, '_blank')
+
+    // يُسجَّل كإرسال عبر واتساب — الفتح لا يضمن الضغط على إرسال،
+    // لكنه أدق بكثير من عدم وجود أي سجل إطلاقاً
+    const { error } = await supabase.from('report_deliveries').insert({
+      report_id: rep.id, channel: 'whatsapp',
+      recipient: '+' + phone, sent_by: me?.id ?? null
+    })
+    if (error) { alert('تعذّر تسجيل الإرسال: ' + error.message); return }
+    await loadReportFor(selectedVisit?.id)
+  }
+
+  async function sendViaEmail() {
+    const rep = existingReport
+    if (!rep) return alert('أصدر التقرير أولاً.')
+    const to = (selectedProject?.client_email || '').trim()
+    if (!to) return alert('لا يوجد بريد إلكتروني للعميل.\nأضفه من شاشة Projects ثم أعد المحاولة.')
+
+    setSending('email')
+    try {
+      const { data, error } = await supabase.functions.invoke('send-report', {
+        body: { report_id: rep.id, to_email: to }
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+      alert('أُرسل التقرير إلى ' + to)
+      await loadReportFor(selectedVisit?.id)
+    } catch(e) {
+      alert('تعذّر إرسال البريد: ' + (e?.message || e))
+    } finally { setSending('') }
+  }
+
   async function loadVisitData(visit) {
+    loadReportFor(visit?.id)
     const fullNotes = visit.notes?.trim() || ''
     const shortType = visit.notes?.split(' — ')[0]?.trim() || ''
     const { data: allItems } = await supabase.from('inspection_checklists').select('*').order('order_index')
@@ -184,7 +255,11 @@ export function Reports() {
     }
     setSaving(true)
     try {
-      const reportNo = `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
+      // إعادة إصدار التقرير لنفس الزيارة تُحدّث السجل القائم بدل إنشاء
+      // نسخة جديدة. الإصدار المتكرر أنتج ١٢٢ سجلاً لـ٧٨ زيارة فقط،
+      // و٢١ زيارة صار لها أكثر من تقرير بلا سبب.
+      const reportNo = existingReport?.report_no
+        || `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
       const today = new Date().toLocaleDateString('en-GB')
       const photoHtml = photos.map(ph => `
         <div style="break-inside:avoid;margin-bottom:12px;">
@@ -200,17 +275,26 @@ export function Reports() {
       const archiveUrl = await archiveReport(reportNo, html)
 
       const { data: auth } = await supabase.auth.getUser()
-      const { error: insErr } = await supabase.from('reports').insert({
-        report_no: reportNo,
-        visit_id: selectedVisit.id,
-        project_id: selectedProject.id,
-        pdf_path: archiveUrl,
-        generated_by: auth?.user?.id ?? null
-      })
-      if (insErr) {
-        if (archiveUrl) await removeStorageFile(archiveUrl)
-        throw insErr
+
+      if (existingReport) {
+        const { error: updErr } = await supabase.from('reports')
+          .update({ pdf_path: archiveUrl, generated_by: auth?.user?.id ?? null })
+          .eq('id', existingReport.id)
+        if (updErr) throw updErr
+      } else {
+        const { error: insErr } = await supabase.from('reports').insert({
+          report_no: reportNo,
+          visit_id: selectedVisit.id,
+          project_id: selectedProject.id,
+          pdf_path: archiveUrl,
+          generated_by: auth?.user?.id ?? null
+        })
+        if (insErr) {
+          if (archiveUrl) await removeStorageFile(archiveUrl)
+          throw insErr
+        }
       }
+      await loadReportFor(selectedVisit.id)
 
       const w = window.open('', '_blank')
       if (!w) { alert('تعذّر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.'); return }
@@ -472,11 +556,63 @@ export function Reports() {
           )}
           {selectedVisit && (
             <button className="btn btn-primary" onClick={generateReport} disabled={saving}>
-              {saving ? 'Generating...' : '📄 Generate PDF Report'}
+              {saving ? 'Generating...' : existingReport ? '📄 إعادة إصدار التقرير' : '📄 Generate PDF Report'}
             </button>
           )}
         </div>
       </div>
+
+      {/* حالة تسليم التقرير للعميل — السؤال الذي لم يكن البرنامج يجيب عليه */}
+      {selectedVisit && (
+        <div className="card" style={{marginBottom:16,
+          border:`1px solid ${existingReport?.last_sent_at ? 'rgba(15,110,86,.3)' : existingReport ? 'rgba(133,79,11,.35)' : 'var(--border)'}`,
+          background: existingReport?.last_sent_at ? 'var(--green-light,#E1F5EE)' : existingReport ? 'var(--amber-light)' : 'var(--bg-card)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
+            <div>
+              {!existingReport ? (
+                <>
+                  <div style={{fontSize:13,fontWeight:600}}>لم يصدر تقرير لهذه الزيارة بعد</div>
+                  <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
+                    أصدر التقرير أولاً ثم أرسله للعميل
+                  </div>
+                </>
+              ) : existingReport.last_sent_at ? (
+                <>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0F6E56'}}>
+                    ✓ أُرسل للعميل — {existingReport.last_sent_via === 'email' ? 'بريد إلكتروني' : 'واتساب'}
+                  </div>
+                  <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
+                    {existingReport.report_no} · {new Date(existingReport.last_sent_at).toLocaleString('en-GB')}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--amber)'}}>
+                    ⚠ التقرير صدر ولم يُرسل للعميل
+                  </div>
+                  <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
+                    {existingReport.report_no} · صدر في {new Date(existingReport.created_at).toLocaleDateString('en-GB')}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {existingReport && (
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {existingReport.pdf_path && (
+                  <a className="btn btn-sm" href={existingReport.pdf_path} target="_blank" rel="noreferrer">👁 عرض</a>
+                )}
+                <button className="btn btn-sm" style={{color:'#0F6E56',borderColor:'#0F6E56'}}
+                  onClick={sendViaWhatsapp}>واتساب</button>
+                <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}}
+                  onClick={sendViaEmail} disabled={sending==='email'}>
+                  {sending==='email' ? 'جارٍ الإرسال…' : 'بريد'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Project Dropdown */}
       <div style={{position:'relative',marginBottom:16,maxWidth:600}} ref={dropdownRef}>

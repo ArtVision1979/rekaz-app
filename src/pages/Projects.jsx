@@ -3,7 +3,7 @@ import { getProjects, createProject, supabase } from '../lib/supabase.js'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { active:'badge-progress', completed:'badge-done', on_hold:'badge-gray', cancelled:'badge-open' }
-const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', status:'active', progress:0 }
+const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', client_email:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', status:'active', progress:0 }
 
 export default function Projects() {
   const systems = useConstructionSystems()
@@ -43,6 +43,7 @@ export default function Projects() {
     setForm({
       name: p.name, project_no: p.project_no, location: p.location||'',
       client_name: p.client_name||'', client_phone: p.client_phone||'',
+      client_email: p.client_email||'',
       engineer_name: p.engineer_name||'', engineer_phone: p.engineer_phone||'',
       contractor_name: p.contractor_name||'', contractor_phone: p.contractor_phone||'',
       supervision_start: p.supervision_start||'', category_id: p.category_id||'',
@@ -401,6 +402,14 @@ export default function Projects() {
                     <label className="form-label">Client Phone — رقم التواصل</label>
                     <input className="form-input" value={form.client_phone} onChange={e=>setForm(f=>({...f,client_phone:e.target.value}))} placeholder="+973 XXXX XXXX"/>
                   </div>
+                </div>
+                {/* البريد يُستخدم لإرسال تقارير الزيارات للعميل من داخل
+                    البرنامج مع تسجيل الإرسال */}
+                <div className="form-group" style={{marginTop:12}}>
+                  <label className="form-label">Client Email — بريد المالك</label>
+                  <input type="email" className="form-input" value={form.client_email}
+                    onChange={e=>setForm(f=>({...f,client_email:e.target.value}))}
+                    placeholder="client@example.com"/>
                 </div>
               </div>
 
