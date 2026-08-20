@@ -22,6 +22,8 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // يدمج معالجات Web Push داخل الـ Service Worker المولَّد
+        importScripts: ['/push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {

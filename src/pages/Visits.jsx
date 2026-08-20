@@ -147,20 +147,24 @@ export default function Visits() {
 
   async function saveChecklistResult(itemId, itemText, result, notes) {
     if (!showChecklist) return
-    const existing = checklistResults[itemId]
-    const updateData = notes !== undefined ? { result, notes } : { result }
-    if (existing) {
-      await supabase.from('visit_checklist_results').update(updateData).eq('id', existing.id)
-    } else {
-      const { data } = await supabase.from('visit_checklist_results').insert({
-        visit_id: showChecklist.id,
-        checklist_item_id: itemId,
-        item_text: itemText,
-        ...updateData
-      }).select().single()
-      if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
-    }
-    setChecklistResults(prev => ({ ...prev, [itemId]: { ...(prev[itemId]||{}), ...updateData } }))
+    try {
+      const existing = checklistResults[itemId]
+      const updateData = notes !== undefined ? { result, notes } : { result }
+      if (existing) {
+        const { error: updErr } = await supabase.from('visit_checklist_results').update(updateData).eq('id', existing.id)
+        if (updErr) throw updErr
+      } else {
+        const { data, error: insErr } = await supabase.from('visit_checklist_results').insert({
+          visit_id: showChecklist.id,
+          checklist_item_id: itemId,
+          item_text: itemText,
+          ...updateData
+        }).select().single()
+        if (insErr) throw insErr
+        if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
+      }
+      setChecklistResults(prev => ({ ...prev, [itemId]: { ...(prev[itemId]||{}), ...updateData } }))
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function saveNote(itemId, itemText, notes) {
@@ -185,9 +189,11 @@ export default function Visits() {
     e.preventDefault(); setSaving(true)
     try {
       if (editVisit) {
-        await supabase.from('site_visits').update(form).eq('id', editVisit.id)
+        const { error } = await supabase.from('site_visits').update(form).eq('id', editVisit.id)
+        if (error) throw error
       } else {
-        await supabase.from('site_visits').insert(form)
+        const { error } = await supabase.from('site_visits').insert(form)
+        if (error) throw error
       }
       setShowModal(false)
       await loadVisits(selectedProject.id)
@@ -196,8 +202,11 @@ export default function Visits() {
 
   async function handleDelete(v) {
     if (!confirm('Delete this visit?')) return
-    await supabase.from('site_visits').delete().eq('id', v.id)
-    await loadVisits(selectedProject.id)
+    try {
+      const { error } = await supabase.from('site_visits').delete().eq('id', v.id)
+      if (error) throw error
+      await loadVisits(selectedProject.id)
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   const filteredProjects = projects.filter(p =>

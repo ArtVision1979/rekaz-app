@@ -68,7 +68,7 @@ export default function Tasks() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (editTask) { await supabase.from('tasks').update(form).eq('id', editTask.id) }
+      if (editTask) { const { error } = await supabase.from('tasks').update(form).eq('id', editTask.id); if (error) throw error }
       else { await createTask(form) }
       setShowModal(false)
       await loadTasks(selectedProject.id)
@@ -77,14 +77,19 @@ export default function Tasks() {
 
   async function handleDelete(t) {
     if (!confirm('Delete this task?')) return
-    await supabase.from('tasks').delete().eq('id', t.id)
-    await loadTasks(selectedProject.id)
+    try {
+      const { error } = await supabase.from('tasks').delete().eq('id', t.id)
+      if (error) throw error
+      await loadTasks(selectedProject.id)
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function toggleStatus(task) {
     const s = task.status === 'resolved' ? 'open' : 'resolved'
-    await updateTask(task.id, { status: s })
-    setTasks(ts => ts.map(t => t.id === task.id ? {...t, status: s} : t))
+    try {
+      await updateTask(task.id, { status: s })
+      setTasks(ts => ts.map(t => t.id === task.id ? {...t, status: s} : t))
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   const filteredProjects = projects.filter(p =>

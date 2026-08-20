@@ -99,3 +99,26 @@ export async function uploadPhoto(bucket, path, file) {
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)
   return data.publicUrl
 }
+
+// ── Storage helpers ───────────────────────────────────────────────────
+// الملفات تُحفظ في قاعدة البيانات كرابط عام (publicUrl) وليس كمسار.
+// للحذف من التخزين نحتاج المسار، وهذه الدالة تستخرجه من الرابط.
+// تقبل الاثنين: لو مُرّر مسار عادي أصلاً تُعيده كما هو.
+export function storagePathFromUrl(fileUrl, bucket = 'Rekaz') {
+  if (!fileUrl) return null
+  if (!/^https?:\/\//i.test(fileUrl)) return fileUrl.replace(/^\/+/, '')
+  const marker = `/object/public/${bucket}/`
+  const i = fileUrl.indexOf(marker)
+  if (i === -1) return null
+  return decodeURIComponent(fileUrl.slice(i + marker.length).split('?')[0])
+}
+
+// حذف ملف من التخزين. لا يرمي خطأ — فشل حذف الملف يجب ألا
+// يمنع حذف السجل نفسه، لكنه يُسجَّل في الـ console للمتابعة.
+export async function removeStorageFile(fileUrl, bucket = 'Rekaz') {
+  const path = storagePathFromUrl(fileUrl, bucket)
+  if (!path) return false
+  const { error } = await supabase.storage.from(bucket).remove([path])
+  if (error) { console.error('تعذّر حذف الملف من التخزين:', path, error.message); return false }
+  return true
+}

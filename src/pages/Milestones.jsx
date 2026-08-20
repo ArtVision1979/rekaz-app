@@ -42,21 +42,27 @@ export default function Milestones() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (editItem) { await supabase.from('milestones').update(form).eq('id', editItem.id) }
-      else { await supabase.from('milestones').insert(form) }
+      if (editItem) { const { error } = await supabase.from('milestones').update(form).eq('id', editItem.id); if (error) throw error }
+      else { const { error } = await supabase.from('milestones').insert(form); if (error) throw error }
       setShowModal(false); await load()
     } catch(e){ alert(e.message) } finally { setSaving(false) }
   }
 
   async function handleDelete(m) {
     if (!confirm('Delete milestone?')) return
-    await supabase.from('milestones').delete().eq('id', m.id)
-    await load()
+    try {
+      const { error } = await supabase.from('milestones').delete().eq('id', m.id)
+      if (error) throw error
+      await load()
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function markDone(m) {
-    await supabase.from('milestones').update({ status:'completed', completed_date: new Date().toISOString().split('T')[0] }).eq('id', m.id)
-    await load()
+    try {
+      const { error } = await supabase.from('milestones').update({ status:'completed', completed_date: new Date().toISOString().split('T')[0] }).eq('id', m.id)
+      if (error) throw error
+      await load()
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   const today = new Date().toISOString().split('T')[0]

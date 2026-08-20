@@ -51,7 +51,7 @@ export default function Projects() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (editProject) { await supabase.from('projects').update(form).eq('id', editProject.id) }
+      if (editProject) { const { error } = await supabase.from('projects').update(form).eq('id', editProject.id); if (error) throw error }
       else { await createProject(form) }
       setShowModal(false); await load()
     } catch(e) { alert(e.message) } finally { setSaving(false) }
@@ -61,16 +61,25 @@ export default function Projects() {
     if (!confirm(`Delete "${p.name}"?\nThis will delete all related visits, tasks, and data.`)) return
     try {
       // Delete all related data first
-      await supabase.from('project_visits').delete().eq('project_id', p.id)
-      await supabase.from('site_visits').delete().eq('project_id', p.id)
-      await supabase.from('tasks').delete().eq('project_id', p.id)
-      await supabase.from('milestones').delete().eq('project_id', p.id)
-      await supabase.from('daily_logs').delete().eq('project_id', p.id)
-      await supabase.from('drawings').delete().eq('project_id', p.id)
-      await supabase.from('schedule_visits').delete().eq('project_id', p.id)
-      await supabase.from('reports').delete().eq('project_id', p.id)
+      const { error: pvErr } = await supabase.from('project_visits').delete().eq('project_id', p.id)
+      if (pvErr) throw pvErr
+      const { error: svErr } = await supabase.from('site_visits').delete().eq('project_id', p.id)
+      if (svErr) throw svErr
+      const { error: tasksErr } = await supabase.from('tasks').delete().eq('project_id', p.id)
+      if (tasksErr) throw tasksErr
+      const { error: msErr } = await supabase.from('milestones').delete().eq('project_id', p.id)
+      if (msErr) throw msErr
+      const { error: dlErr } = await supabase.from('daily_logs').delete().eq('project_id', p.id)
+      if (dlErr) throw dlErr
+      const { error: drwErr } = await supabase.from('drawings').delete().eq('project_id', p.id)
+      if (drwErr) throw drwErr
+      const { error: schErr } = await supabase.from('schedule_visits').delete().eq('project_id', p.id)
+      if (schErr) throw schErr
+      const { error: repErr } = await supabase.from('reports').delete().eq('project_id', p.id)
+      if (repErr) throw repErr
       // Finally delete the project
-      await supabase.from('projects').delete().eq('id', p.id)
+      const { error: projErr } = await supabase.from('projects').delete().eq('id', p.id)
+      if (projErr) throw projErr
       await load()
     } catch(e) { alert('Error: ' + e.message) }
   }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getProjects, supabase } from '../lib/supabase.js'
+import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
 
 async function compressImage(file, maxSizeKB = 400) {
   const imageTypes = ['image/jpeg','image/png','image/webp']
@@ -67,7 +67,9 @@ export default function Drawings() {
       const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, fileToUpload)
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('Rekaz').getPublicUrl(path)
-      await supabase.from('drawings').insert({ ...form, file_path: publicUrl })
+      const { error: insErr } = await supabase.from('drawings').insert({ ...form, file_path: publicUrl })
+      // لو فشل حفظ السجل، نحذف الملف المرفوع حتى لا يبقى يتيماً في التخزين
+      if (insErr) { await supabase.storage.from('Rekaz').remove([path]); throw insErr }
       setShowModal(false)
       setSelectedFile(null)
       setForm({ project_id: '', title: '', drawing_no: '', version: 'R0' })
@@ -77,8 +79,13 @@ export default function Drawings() {
 
   async function handleDelete(d) {
     if (!confirm(`Delete "${d.title}"?`)) return
-    await supabase.from('drawings').delete().eq('id', d.id)
-    await load()
+    try {
+      const { error } = await supabase.from('drawings').delete().eq('id', d.id)
+      if (error) throw error
+      // حذف الملف من التخزين أيضاً حتى لا تتراكم ملفات بلا سجلات
+      await removeStorageFile(d.file_path)
+      await load()
+    } catch(e) { alert('تعذّر الحذف: ' + e.message) }
   }
 
   function getFileIcon(path) {

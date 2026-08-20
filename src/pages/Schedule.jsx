@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { getProjects, supabase } from '../lib/supabase.js'
-import { requestNotificationPermission, scheduleAllVisits } from '../hooks/useNotifications.js'
+import {
+  requestNotificationPermission, getNotificationPermission, pushSupported,
+  subscribeToPush, getReminderMinutes, setReminderMinutes
+} from '../hooks/useNotifications.js'
 
 const DAYS = ['Sat','Sun','Mon','Tue','Wed','Thu']
 const COLORS = ['#185FA5','#0F6E56','#854F0B','#A32D2D','#534AB7','#1D9E75']
@@ -18,13 +21,26 @@ export default function Schedule() {
   const [schedule, setSchedule] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
-  const [notifPermission, setNotifPermission] = useState(Notification?.permission || 'default')
+  // ملاحظة: لا نقرأ Notification.permission مباشرة — لو كان الكائن غير
+  // معرّف (بعض الـ WebView على أندرويد) يُرمى ReferenceError وتنهار الصفحة.
+  const [notifPermission, setNotifPermission] = useState(getNotificationPermission())
   const [notifBefore, setNotifBefore] = useState(60)
-  const [notifIds, setNotifIds] = useState({})
   const weekDates = getWeekDates()
-  const notifIdsRef = useRef({})
 
   useEffect(() => { load() }, [])
+
+  // مدة التذكير محفوظة في الخادم لأنه هو من يرسل، لا المتصفح
+  useEffect(() => {
+    getReminderMinutes().then(setNotifBefore).catch(() => {})
+    // لو سبق أن مُنح الإذن، نتأكد أن اشتراك هذا الجهاز مسجّل
+    if (getNotificationPermission() === 'granted') subscribeToPush().catch(() => {})
+  }, [])
+
+  async function changeReminderMinutes(minutes) {
+    setNotifBefore(minutes)
+    const ok = await setReminderMinutes(minutes)
+    if (!ok) alert('تعذّر حفظ مدة التذكير. حاول مرة أخرى.')
+  }
 
   async function load() {
     try {
@@ -58,15 +74,8 @@ export default function Schedule() {
       setSchedule(merged)
       setProjects(p || [])
 
-      if (Notification?.permission === 'granted') {
-        const allForNotif = merged.map(v => ({
-          ...v,
-          projects: { name: v._projectName }
-        }))
-        const ids = scheduleAllVisits(allForNotif, notifBefore)
-        notifIdsRef.current = ids
-        setNotifIds(ids)
-      }
+      // لا جدولة في المتصفح — الخادم يتولّى الإرسال عبر pg_cron،
+      // فيصل التذكير بريداً وإشعاراً حتى لو كان البرنامج مغلقاً.
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -91,11 +100,15 @@ export default function Schedule() {
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          {notifPermission === 'granted' ? (
+          {notifPermission === 'unsupported' ? (
+            <span style={{fontSize:12,color:'var(--text-muted)'}}>التذكيرات غير مدعومة على هذا الجهاز</span>
+          ) : notifPermission === 'granted' ? (
             <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <span style={{fontSize:12,color:'#0F6E56'}}>🔔 Reminders On</span>
+              <span style={{fontSize:12,color:'#0F6E56'}}>
+                🔔 Reminders On
+              </span>
               <select className="form-input" style={{width:120,fontSize:12}} value={notifBefore}
-                onChange={e=>{setNotifBefore(parseInt(e.target.value));load()}}>
+                onChange={e=>changeReminderMinutes(parseInt(e.target.value))}>
                 <option value={15}>15 min before</option>
                 <option value={30}>30 min before</option>
                 <option value={60}>1 hour before</option>
@@ -113,6 +126,12 @@ export default function Schedule() {
       {notifPermission === 'denied' && (
         <div style={{background:'var(--amber-light)',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--amber)'}}>
           ⚠ Notifications blocked. Enable them in browser settings.
+        </div>
+      )}
+
+      {notifPermission === 'granted' && !pushSupported() && (
+        <div style={{background:'var(--amber-light)',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--amber)'}}>
+          ⚠ هذا المتصفح لا يدعم إشعارات الويب. ستصلك التذكيرات بالبريد الإلكتروني فقط.
         </div>
       )}
 
@@ -156,7 +175,7 @@ export default function Schedule() {
                               borderLeft: `3px solid ${isConsultation ? '#854F0B' : COLORS[ci]}`
                             }}>
                               <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                                {notifIds[item.id] ? '🔔 ' : ''}{item._projectName}
+                                {notifPermission === 'granted' ? '🔔 ' : ''}{item._projectName}
                               </div>
                               <div style={{fontSize:10,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                                 {item._label}

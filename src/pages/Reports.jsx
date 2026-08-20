@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getProjects, supabase } from '../lib/supabase.js'
+import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
 function buildChecklistHtml(cl, res) {
@@ -148,14 +148,18 @@ export function Reports() {
   async function saveChecklistResult(itemId, itemText, result) {
     if (!selectedVisit) return
     const existing = checklistResults[itemId]
-    if (existing) {
-      await supabase.from('visit_checklist_results').update({ result }).eq('id', existing.id)
-    } else {
-      const { data } = await supabase.from('visit_checklist_results').insert({
-        visit_id: selectedVisit.id, checklist_item_id: itemId, item_text: itemText, result
-      }).select().single()
-      if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
-    }
+    try {
+      if (existing) {
+        const { error: updErr } = await supabase.from('visit_checklist_results').update({ result }).eq('id', existing.id)
+        if (updErr) throw updErr
+      } else {
+        const { data, error: insErr } = await supabase.from('visit_checklist_results').insert({
+          visit_id: selectedVisit.id, checklist_item_id: itemId, item_text: itemText, result
+        }).select().single()
+        if (insErr) throw insErr
+        if (data) { setChecklistResults(prev => ({ ...prev, [itemId]: data })); return }
+      }
+    } catch(e) { alert('تعذّر حفظ نتيجة الفحص: ' + e.message); return }
     setChecklistResults(prev => ({
       ...prev,
       [itemId]: { ...(prev[itemId] || { checklist_item_id: itemId, item_text: itemText }), result }
@@ -181,7 +185,6 @@ export function Reports() {
     setSaving(true)
     try {
       const reportNo = `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
-      await supabase.from('reports').insert({ report_no: reportNo, visit_id: selectedVisit.id, project_id: selectedProject.id })
       const today = new Date().toLocaleDateString('en-GB')
       const photoHtml = photos.map(ph => `
         <div style="break-inside:avoid;margin-bottom:12px;">
@@ -189,11 +192,49 @@ export function Reports() {
           ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
         </div>`).join('')
       const checklistHtml = buildChecklistHtml(checklist, checklistResults)
+      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, photoHtml, photos })
+
+      // أرشفة نسخة ثابتة من التقرير في التخزين وربطها بالسجل، حتى
+      // يمكن فتح التقرير لاحقاً كما صدر. سابقاً كان عمود pdf_path
+      // يبقى فارغاً دائماً فلا يمكن استرجاع أي تقرير بعد طباعته.
+      const archiveUrl = await archiveReport(reportNo, html)
+
+      const { data: auth } = await supabase.auth.getUser()
+      const { error: insErr } = await supabase.from('reports').insert({
+        report_no: reportNo,
+        visit_id: selectedVisit.id,
+        project_id: selectedProject.id,
+        pdf_path: archiveUrl,
+        generated_by: auth?.user?.id ?? null
+      })
+      if (insErr) {
+        if (archiveUrl) await removeStorageFile(archiveUrl)
+        throw insErr
+      }
+
       const w = window.open('', '_blank')
-      w.document.write(buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, photoHtml, photos }))
+      if (!w) { alert('تعذّر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.'); return }
+      w.document.write(html)
       w.document.close(); w.focus()
       setTimeout(() => { w.print() }, 800)
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
+  }
+
+  // أرشفة التقرير في التخزين. اختيارية — لو فشلت لا نمنع إصدار
+  // التقرير، فالطباعة أهم من الأرشفة.
+  async function archiveReport(reportNo, html) {
+    try {
+      const path = `reports/${reportNo}.html`
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const { error } = await supabase.storage.from('Rekaz')
+        .upload(path, blob, { contentType: 'text/html;charset=utf-8', upsert: true })
+      if (error) throw error
+      const { data } = supabase.storage.from('Rekaz').getPublicUrl(path)
+      return data.publicUrl
+    } catch(e) {
+      console.error('تعذّرت أرشفة التقرير:', e?.message || e)
+      return null
+    }
   }
 
   // ── Full project report ──────────────────────────────────────────────
@@ -312,6 +353,7 @@ export function Reports() {
       const pct = visits.length ? Math.round(completedCount / visits.length * 100) : 0
 
       const w = window.open('', '_blank')
+      if (!w) { alert('تعذّر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.'); return }
       w.document.write(`<!DOCTYPE html>
         <html><head><meta charset="UTF-8"><title>Project Report - ${selectedProject.name}</title>
         <style>* {box-sizing:border-box;margin:0;padding:0;} body {font-family:Arial,sans-serif;padding:36px;color:#111;font-size:13px;} @media print {body {padding:20px;} .no-print {display:none !important;}}</style>

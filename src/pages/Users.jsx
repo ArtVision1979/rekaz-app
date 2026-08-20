@@ -30,7 +30,8 @@ export default function Users() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      await supabase.from('users').update({ full_name: form.full_name, role: form.role }).eq('id', editUser.id)
+      const { error } = await supabase.from('users').update({ full_name: form.full_name, role: form.role }).eq('id', editUser.id)
+      if (error) throw error
       setShowModal(false); await load()
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }

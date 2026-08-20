@@ -87,8 +87,8 @@ export default function DailyLogs() {
     e.preventDefault(); setSaving(true)
     try {
       const data = { ...form, workers_count: form.workers_count ? parseInt(form.workers_count) : null }
-      if (editLog) { await supabase.from('daily_logs').update(data).eq('id', editLog.id) }
-      else { await supabase.from('daily_logs').insert(data) }
+      if (editLog) { const { error } = await supabase.from('daily_logs').update(data).eq('id', editLog.id); if (error) throw error }
+      else { const { error } = await supabase.from('daily_logs').insert(data); if (error) throw error }
       setShowModal(false)
       await loadLogs(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
@@ -96,8 +96,11 @@ export default function DailyLogs() {
 
   async function handleDelete(l) {
     if (!confirm('Delete this log?')) return
-    await supabase.from('daily_logs').delete().eq('id', l.id)
-    await loadLogs(selectedProject.id)
+    try {
+      const { error } = await supabase.from('daily_logs').delete().eq('id', l.id)
+      if (error) throw error
+      await loadLogs(selectedProject.id)
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   const filteredProjects = projects.filter(p =>

@@ -86,7 +86,8 @@ export default function ProjectVisits() {
         order_index: t.order_index || i + 1,
         status: 'pending'
       }))
-      await supabase.from('project_visits').insert(toInsert)
+      const { error } = await supabase.from('project_visits').insert(toInsert)
+      if (error) throw error
       await loadVisits(selectedProject.id)
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
@@ -96,7 +97,8 @@ export default function ProjectVisits() {
     if (!confirm('Delete all current visits and reload defaults?')) return
     setSaving(true)
     try {
-      await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
+      const { error: delErr } = await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
+      if (delErr) throw delErr
       const toInsert = templates.map((t, i) => ({
         project_id: selectedProject.id,
         title: t.title,
@@ -104,7 +106,10 @@ export default function ProjectVisits() {
         order_index: t.order_index || i + 1,
         status: 'pending'
       }))
-      if (toInsert.length) await supabase.from('project_visits').insert(toInsert)
+      if (toInsert.length) {
+        const { error: insErr } = await supabase.from('project_visits').insert(toInsert)
+        if (insErr) throw insErr
+      }
       await loadVisits(selectedProject.id)
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
@@ -112,8 +117,11 @@ export default function ProjectVisits() {
   async function deleteAllVisits() {
     if (!selectedProject) return
     if (!confirm('Delete ALL visits?')) return
-    await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
-    setVisits([])
+    try {
+      const { error } = await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
+      if (error) throw error
+      setVisits([])
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   function openNew() {
@@ -138,8 +146,8 @@ export default function ProjectVisits() {
     e.preventDefault(); setSaving(true)
     try {
       const data = { ...form, project_id: selectedProject.id }
-      if (editVisit) { await supabase.from('project_visits').update(data).eq('id', editVisit.id) }
-      else { await supabase.from('project_visits').insert(data) }
+      if (editVisit) { const { error } = await supabase.from('project_visits').update(data).eq('id', editVisit.id); if (error) throw error }
+      else { const { error } = await supabase.from('project_visits').insert(data); if (error) throw error }
       setShowModal(false)
       await loadVisits(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
@@ -147,42 +155,55 @@ export default function ProjectVisits() {
 
   async function handleDelete(v) {
     if (!confirm('Delete this visit?')) return
-    await supabase.from('project_visits').delete().eq('id', v.id)
-    await loadVisits(selectedProject.id)
+    try {
+      const { error } = await supabase.from('project_visits').delete().eq('id', v.id)
+      if (error) throw error
+      await loadVisits(selectedProject.id)
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function toggleStatus(v) {
-    const nextStatus = STATUS_NEXT[v.status]
-    await supabase.from('project_visits').update({ status: nextStatus }).eq('id', v.id)
-    if (nextStatus === 'completed') {
-      const today = new Date().toISOString().split('T')[0]
-      const visitDate = v.scheduled_date || today
-      const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title + (v.title_ar ? ' — ' + v.title_ar : '')).maybeSingle()
-      if (!existing) {
-        const createSiteVisit = confirm('Create a Site Visit report for: ' + v.title + '?')
-        if (createSiteVisit) {
-          await supabase.from('site_visits').insert({
-            project_id: v.project_id,
-            visit_date: visitDate,
-            engineer_name: v.engineer_name || '',
-            notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
-            severity: 'low',
-            status: 'submitted'
-          })
+    try {
+      const nextStatus = STATUS_NEXT[v.status]
+      const { error: updErr } = await supabase.from('project_visits').update({ status: nextStatus }).eq('id', v.id)
+      if (updErr) throw updErr
+      if (nextStatus === 'completed') {
+        const today = new Date().toISOString().split('T')[0]
+        const visitDate = v.scheduled_date || today
+        const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title + (v.title_ar ? ' — ' + v.title_ar : '')).maybeSingle()
+        if (!existing) {
+          const createSiteVisit = confirm('Create a Site Visit report for: ' + v.title + '?')
+          if (createSiteVisit) {
+            const { error: visitErr } = await supabase.from('site_visits').insert({
+              project_id: v.project_id,
+              visit_date: visitDate,
+              engineer_name: v.engineer_name || '',
+              notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
+              severity: 'low',
+              status: 'submitted'
+            })
+            if (visitErr) throw visitErr
+          }
         }
       }
-    }
-    setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
+      setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function saveTemplates() {
-    await supabase.from('visit_templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    const toInsert = templates.filter(t => t.title?.trim()).map((t, i) => ({
-      title: t.title, title_ar: t.title_ar||'', order_index: i+1
-    }))
-    if (toInsert.length) await supabase.from('visit_templates').insert(toInsert)
-    setShowTemplateModal(false)
-    await loadInitial()
+    try {
+      const { error: delErr } = await supabase.from('visit_templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      if (delErr) throw delErr
+      const toInsert = templates.filter(t => t.title?.trim()).map((t, i) => ({
+        title: t.title, title_ar: t.title_ar||'', order_index: i+1
+      }))
+      if (toInsert.length) {
+        const { error: insErr } = await supabase.from('visit_templates').insert(toInsert)
+        if (insErr) throw insErr
+      }
+      setShowTemplateModal(false)
+      await loadInitial()
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   function printVisits() {

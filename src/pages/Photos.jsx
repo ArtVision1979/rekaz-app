@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getProjects, getVisits, supabase } from '../lib/supabase.js'
+import { getProjects, getVisits, supabase, removeStorageFile } from '../lib/supabase.js'
 
 async function compressImage(file, maxSizeKB = 300) {
   return new Promise((resolve) => {
@@ -79,7 +79,9 @@ export default function Photos() {
       const { error: uploadError } = await supabase.storage.from('Rekaz').upload(path, compressed)
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('Rekaz').getPublicUrl(path)
-      await supabase.from('visit_photos').insert({ visit_id: form.visit_id, file_path: publicUrl, caption: form.caption })
+      const { error: insErr } = await supabase.from('visit_photos').insert({ visit_id: form.visit_id, file_path: publicUrl, caption: form.caption })
+      // لو فشل حفظ السجل، نحذف الملف المرفوع حتى لا يبقى يتيماً في التخزين
+      if (insErr) { await supabase.storage.from('Rekaz').remove([path]); throw insErr }
       setShowModal(false); setSelectedFile(null); setPreview(null)
       setForm({ visit_id:'', caption:'' }); await load()
     } catch(e) { alert('Upload failed: ' + e.message) } finally { setUploading(false) }
@@ -87,9 +89,14 @@ export default function Photos() {
 
   async function handleDelete(photo) {
     if (!confirm('Delete this photo?')) return
-    await supabase.from('visit_photos').delete().eq('id', photo.id)
-    setPhotos(prev => prev.filter(p => p.id !== photo.id))
-    if (lightbox?.id === photo.id) setLightbox(null)
+    try {
+      const { error } = await supabase.from('visit_photos').delete().eq('id', photo.id)
+      if (error) throw error
+      // حذف الملف من التخزين أيضاً حتى لا تتراكم ملفات بلا سجلات
+      await removeStorageFile(photo.file_path)
+      setPhotos(prev => prev.filter(p => p.id !== photo.id))
+      if (lightbox?.id === photo.id) setLightbox(null)
+    } catch(e) { alert('تعذّر الحذف: ' + e.message) }
   }
 
   function openLightbox(photo) { setLightbox(photo) }

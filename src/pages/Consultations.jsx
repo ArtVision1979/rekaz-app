@@ -64,22 +64,28 @@ export default function Consultations() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (editItem) { await supabase.from('consultations').update(form).eq('id', editItem.id) }
-      else { await supabase.from('consultations').insert(form) }
+      if (editItem) { const { error } = await supabase.from('consultations').update(form).eq('id', editItem.id); if (error) throw error }
+      else { const { error } = await supabase.from('consultations').insert(form); if (error) throw error }
       setShowModal(false); await load()
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
   async function handleDelete(item) {
     if (!confirm(`Delete consultation for "${item.client_name}"?`)) return
-    await supabase.from('consultations').delete().eq('id', item.id)
-    await load()
+    try {
+      const { error } = await supabase.from('consultations').delete().eq('id', item.id)
+      if (error) throw error
+      await load()
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   async function toggleStatus(item) {
     const next = { pending:'completed', completed:'cancelled', cancelled:'pending' }
-    await supabase.from('consultations').update({ status: next[item.status] }).eq('id', item.id)
-    setConsultations(prev => prev.map(c => c.id === item.id ? { ...c, status: next[item.status] } : c))
+    try {
+      const { error } = await supabase.from('consultations').update({ status: next[item.status] }).eq('id', item.id)
+      if (error) throw error
+      setConsultations(prev => prev.map(c => c.id === item.id ? { ...c, status: next[item.status] } : c))
+    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
   const filtered = consultations.filter(c => {
