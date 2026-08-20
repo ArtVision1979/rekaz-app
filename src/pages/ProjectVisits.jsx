@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
+import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
@@ -12,6 +13,9 @@ export default function ProjectVisits() {
   const [selectedProject, setSelectedProject] = useState(null)
   const [visits, setVisits] = useState([])
   const [templates, setTemplates] = useState([])
+  // نظام الإنشاء الذي تُعرض قوالبه وتُحرَّر (افتراضياً نظام المشروع المختار)
+  const [templateSystemId, setTemplateSystemId] = useState('')
+  const systems = useConstructionSystems()
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
@@ -42,15 +46,31 @@ export default function ProjectVisits() {
 
   async function loadInitial() {
     try {
-      const [{ data: p }, { data: t }] = await Promise.all([
-        supabase.from('projects').select('*').order('created_at', { ascending: false }),
-        supabase.from('visit_templates').select('*').order('order_index')
-      ])
+      const { data: p } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
       setProjects(p || [])
-      setTemplates(t || [])
       if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
+
+  // القوالب تُقرأ لنظام إنشاء واحد فقط، لا كلها دفعة واحدة
+  async function loadTemplates(systemId) {
+    if (!systemId) { setTemplates([]); return }
+    const { data, error } = await supabase
+      .from('visit_templates').select('*')
+      .eq('category_id', systemId).order('order_index')
+    if (error) { console.error('تعذّر جلب القوالب:', error.message); return }
+    setTemplates(data || [])
+  }
+
+  // نظام المشروع المختار هو المصدر الافتراضي للقوالب
+  useEffect(() => {
+    const sysId = selectedProject?.category_id || ''
+    setTemplateSystemId(sysId)
+  }, [selectedProject?.id, selectedProject?.category_id])
+
+  useEffect(() => { loadTemplates(templateSystemId) }, [templateSystemId])
+
+  const currentSystem = systems.find(s => s.id === templateSystemId)
 
   async function loadVisits(projectId) {
     const { data } = await supabase
@@ -62,7 +82,10 @@ export default function ProjectVisits() {
   }
 
   async function loadDefaultVisits() {
-    if (!selectedProject || templates.length === 0) return alert('No templates found.')
+    if (!selectedProject) return
+    if (!selectedProject.category_id)
+      return alert('لم يُحدَّد نظام الإنشاء لهذا المشروع.\nافتح شاشة Projects وحدّد النظام (بوست تنشن / أر سي سي سلاب / بريكاست) أولاً، لأن تسلسل الزيارات يختلف بينها.')
+    if (templates.length === 0) return alert('لا توجد قوالب لهذا النظام.')
     setSaving(true)
     try {
       const toInsert = templates.map((t, i) => ({
@@ -180,17 +203,21 @@ export default function ProjectVisits() {
 
   async function saveTemplates() {
     try {
-      const { error: delErr } = await supabase.from('visit_templates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      // مهم: الحذف مقصور على نظام الإنشاء المعروض. كان يحذف كل
+      // القوالب في كل الأنظمة، فتضيع المجموعات الأخرى بضغطة واحدة.
+      if (!templateSystemId) { alert('اختر نظام الإنشاء أولاً.'); setSaving(false); return }
+      const { error: delErr } = await supabase.from('visit_templates').delete().eq('category_id', templateSystemId)
       if (delErr) throw delErr
       const toInsert = templates.filter(t => t.title?.trim()).map((t, i) => ({
-        title: t.title, title_ar: t.title_ar||'', order_index: i+1
+        title: t.title, title_ar: t.title_ar||'', order_index: i+1,
+        is_default: true, category_id: templateSystemId
       }))
       if (toInsert.length) {
         const { error: insErr } = await supabase.from('visit_templates').insert(toInsert)
         if (insErr) throw insErr
       }
       setShowTemplateModal(false)
-      await loadInitial()
+      await loadTemplates(templateSystemId)
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
@@ -347,6 +374,23 @@ export default function ProjectVisits() {
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowTemplateModal(false)}>
           <div className="modal">
             <h3>Edit Visit Templates</h3>
+            {/* لكل نظام إنشاء تسلسل زيارات مستقل — التعديل هنا يمس
+                النظام المختار وحده ولا يمس الأنظمة الأخرى */}
+            <div className="form-group">
+              <label className="form-label">نظام الإنشاء · Construction System</label>
+              <select className="form-input" value={templateSystemId}
+                onChange={e=>setTemplateSystemId(e.target.value)}>
+                <option value="">— اختر النظام —</option>
+                {systems.map(s=>(
+                  <option key={s.id} value={s.id}>{s.name_ar ? `${s.name_ar} · ${s.name}` : s.name}</option>
+                ))}
+              </select>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>
+                {templateSystemId
+                  ? `${templates.length} زيارة في هذا القالب`
+                  : 'اختر نظاماً لعرض قوالبه'}
+              </div>
+            </div>
             <div style={{marginBottom:12}}>
               {templates.map((t,i)=>(
                 <div key={i} style={{display:'flex',gap:6,marginBottom:6,alignItems:'center'}}>
@@ -466,6 +510,19 @@ export default function ProjectVisits() {
                 <div style={{fontWeight:500,fontSize:15}}>{selectedProject.name}</div>
                 <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
                   {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
+                </div>
+                {/* نظام الإنشاء يحدد تسلسل الزيارات، فإظهاره هنا يمنع
+                    تحميل القالب الخطأ على المشروع */}
+                <div style={{marginTop:6}}>
+                  {currentSystem ? (
+                    <span style={{fontSize:11,fontWeight:600,color:'#0F6E56',background:'#E1F5EE',padding:'3px 10px',borderRadius:20}}>
+                      🏗 {currentSystem.name_ar || currentSystem.name}
+                    </span>
+                  ) : (
+                    <span style={{fontSize:11,fontWeight:600,color:'#854F0B',background:'var(--amber-light)',padding:'3px 10px',borderRadius:20}}>
+                      ⚠ لم يُحدَّد نظام الإنشاء — حدّده من شاشة Projects
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:12}}>

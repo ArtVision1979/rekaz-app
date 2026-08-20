@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { getProjects, createProject, supabase } from '../lib/supabase.js'
+import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { active:'badge-progress', completed:'badge-done', on_hold:'badge-gray', cancelled:'badge-open' }
-const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', status:'active', progress:0 }
+const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', status:'active', progress:0 }
 
 export default function Projects() {
+  const systems = useConstructionSystems()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -43,7 +45,8 @@ export default function Projects() {
       client_name: p.client_name||'', client_phone: p.client_phone||'',
       engineer_name: p.engineer_name||'', engineer_phone: p.engineer_phone||'',
       contractor_name: p.contractor_name||'', contractor_phone: p.contractor_phone||'',
-      supervision_start: p.supervision_start||'', status: p.status, progress: p.progress||0
+      supervision_start: p.supervision_start||'', category_id: p.category_id||'',
+      status: p.status, progress: p.progress||0
     })
     setShowModal(true)
   }
@@ -51,8 +54,11 @@ export default function Projects() {
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
-      if (editProject) { const { error } = await supabase.from('projects').update(form).eq('id', editProject.id); if (error) throw error }
-      else { await createProject(form) }
+      // القائمة المنسدلة تُرجع '' عند عدم الاختيار، وهي قيمة غير صالحة
+      // لعمود uuid — نحوّلها إلى null قبل الحفظ
+      const payload = { ...form, category_id: form.category_id || null }
+      if (editProject) { const { error } = await supabase.from('projects').update(payload).eq('id', editProject.id); if (error) throw error }
+      else { await createProject(payload) }
       setShowModal(false); await load()
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
@@ -427,6 +433,19 @@ export default function Projects() {
               </div>
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <div className="form-group">
+                  <label className="form-label">نظام الإنشاء · Construction System *</label>
+                  {/* يحدد تسلسل زيارات المشروع: في البوست تنشن وال RCC
+                      تُصبّ الجسور مع السقف، أما البريكاست فالجسور تُفحص
+                      قبل تركيب البلاطات فيحتاج زيارات إضافية */}
+                  <select className="form-input" value={form.category_id||''} required
+                    onChange={e=>setForm(f=>({...f,category_id:e.target.value}))}>
+                    <option value="">— اختر النظام —</option>
+                    {systems.map(sys=>(
+                      <option key={sys.id} value={sys.id}>{sys.name_ar ? `${sys.name_ar} · ${sys.name}` : sys.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="form-group">
                   <label className="form-label">Status — الحالة</label>
                   <select className="form-input" value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
