@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getTasks, createTask, updateTask, getProjects, supabase } from '../lib/supabase.js'
+import { useEngineers } from '../hooks/useEngineers.js'
+import { useCurrentUser } from '../hooks/useCurrentUser.js'
 
-const EMPTY = { title: '', project_id: '', severity: 'medium', assigned_to: '', due_date: '', status: 'open', description: '' }
+const EMPTY = { title: '', project_id: '', severity: 'medium', assigned_to_id: null, assigned_to: '', due_date: '', status: 'open', description: '' }
+const OTHER = '__other__'
 const SEV = { low:'badge-blue', medium:'badge-progress', high:'badge-open', critical:'badge-open' }
 const STATUS_C = { open:'badge-gray', in_progress:'badge-progress', resolved:'badge-done', closed:'badge-gray' }
 
@@ -18,6 +21,9 @@ export default function Tasks() {
   const [projectSearch, setProjectSearch] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [mineOnly, setMineOnly] = useState(false)
+  const engineers = useEngineers()
+  const { user: me } = useCurrentUser()
   const dropdownRef = useRef(null)
 
   useEffect(() => { loadProjects() }, [])
@@ -61,7 +67,7 @@ export default function Tasks() {
 
   function openEdit(t) {
     setEditTask(t)
-    setForm({ title: t.title, project_id: t.project_id, severity: t.severity, assigned_to: t.assigned_to||'', due_date: t.due_date||'', status: t.status, description: t.description||'' })
+    setForm({ title: t.title, project_id: t.project_id, severity: t.severity, assigned_to_id: t.assigned_to_id||null, assigned_to: t.assigned_to||'', due_date: t.due_date||'', status: t.status, description: t.description||'' })
     setShowModal(true)
   }
 
@@ -69,7 +75,8 @@ export default function Tasks() {
     e.preventDefault(); setSaving(true)
     try {
       if (editTask) { const { error } = await supabase.from('tasks').update(form).eq('id', editTask.id); if (error) throw error }
-      else { await createTask(form) }
+      // تسجيل من أنشأ المهمة — صار ممكناً بعد ربط جدول المستخدمين
+      else { await createTask({ ...form, created_by: me?.id ?? null }) }
       setShowModal(false)
       await loadTasks(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
@@ -98,10 +105,14 @@ export default function Tasks() {
   )
 
   const filteredTasks = tasks.filter(t => {
+    // «مهامي» يعتمد على الربط الحقيقي بالحساب، لا على تطابق الاسم النصي
+    if (mineOnly && (!me || t.assigned_to_id !== me.id)) return false
     if (filter === 'open') return t.status === 'open' || t.status === 'in_progress'
     if (filter === 'resolved') return t.status === 'resolved' || t.status === 'closed'
     return true
   })
+
+  const mineCount = me ? tasks.filter(t => t.assigned_to_id === me.id).length : 0
 
   const openCount = tasks.filter(t => t.status === 'open' || t.status === 'in_progress').length
   const resolvedCount = tasks.filter(t => t.status === 'resolved' || t.status === 'closed').length
@@ -140,7 +151,25 @@ export default function Tasks() {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
                   <label className="form-label">Assigned To</label>
-                  <input className="form-input" value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} placeholder="Contractor / Engineer..."/>
+                  {/* مهندس مرتبط بحسابه (يفعّل فلتر «مهامي» والتذكيرات)،
+                      أو اسم حر للمقاولين ومن ليس لهم حساب */}
+                  <select className="form-input"
+                    value={form.assigned_to_id || (form.assigned_to ? OTHER : '')}
+                    onChange={e=>{
+                      const v = e.target.value
+                      if (v === OTHER) { setForm(f=>({...f, assigned_to_id:null, assigned_to:''})); return }
+                      const u = engineers.find(x=>x.id===v)
+                      setForm(f=>({...f, assigned_to_id: u?u.id:null, assigned_to: u?(u.full_name||u.email):'' }))
+                    }}>
+                    <option value="">Unassigned</option>
+                    {engineers.map(e=>(<option key={e.id} value={e.id}>{e.full_name||e.email}</option>))}
+                    <option value={OTHER}>Other (contractor…)</option>
+                  </select>
+                  {!form.assigned_to_id && (
+                    <input className="form-input" style={{marginTop:6}} value={form.assigned_to}
+                      onChange={e=>setForm(f=>({...f, assigned_to:e.target.value, assigned_to_id:null}))}
+                      placeholder="Contractor name (optional)"/>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Due Date</label>
@@ -274,6 +303,12 @@ export default function Tasks() {
                     {f==='all'?`All (${tasks.length})`:f==='open'?`Open (${openCount})`:`Resolved (${resolvedCount})`}
                   </button>
                 ))}
+                {me && (
+                  <button className={`btn btn-sm ${mineOnly?'btn-primary':''}`}
+                    onClick={()=>setMineOnly(v=>!v)} style={{fontSize:11}}>
+                    مهامي ({mineCount})
+                  </button>
+                )}
               </div>
             </div>
           </div>

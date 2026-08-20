@@ -1,25 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { useEngineers } from '../hooks/useEngineers.js'
+import EngineerSelect from '../components/EngineerSelect.jsx'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
 const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
-
-function EngineerSelect({ value, onChange, placeholder = 'Select engineer...' }) {
-  const engineers = useEngineers()
-  return (
-    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">{placeholder}</option>
-      {engineers.map(e => (
-        <option key={e.id} value={e.full_name || e.email}>
-          {e.full_name || e.email}
-        </option>
-      ))}
-    </select>
-  )
-}
 
 export default function ProjectVisits() {
   const [projects, setProjects] = useState([])
@@ -35,7 +21,7 @@ export default function ProjectVisits() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [newTemplateName, setNewTemplateName] = useState('')
   const [form, setForm] = useState({
-    title:'', title_ar:'', engineer_name:'',
+    title:'', title_ar:'', engineer_id:null, engineer_name:'',
     scheduled_date:'', scheduled_time:'',
     status:'pending', notes:''
   })
@@ -126,7 +112,7 @@ export default function ProjectVisits() {
 
   function openNew() {
     setEditVisit(null)
-    setForm({ title:'', title_ar:'', engineer_name:'', scheduled_date:'', scheduled_time:'', status:'pending', notes:'' })
+    setForm({ title:'', title_ar:'', engineer_id:null, engineer_name:'', scheduled_date:'', scheduled_time:'', status:'pending', notes:'' })
     setShowModal(true)
   }
 
@@ -134,6 +120,7 @@ export default function ProjectVisits() {
     setEditVisit(v)
     setForm({
       title: v.title, title_ar: v.title_ar||'',
+      engineer_id: v.engineer_id||null,
       engineer_name: v.engineer_name||'',
       scheduled_date: v.scheduled_date||'',
       scheduled_time: v.scheduled_time||'',
@@ -177,6 +164,7 @@ export default function ProjectVisits() {
             const { error: visitErr } = await supabase.from('site_visits').insert({
               project_id: v.project_id,
               visit_date: visitDate,
+              engineer_id: v.engineer_id || null,
               engineer_name: v.engineer_name || '',
               notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
               severity: 'low',
@@ -319,8 +307,9 @@ export default function ProjectVisits() {
                 <input className="form-input" value={form.title_ar} onChange={e=>setForm(f=>({...f,title_ar:e.target.value}))} placeholder="معاينة الموقع"/>
               </div>
               <div className="form-group">
-                <label className="form-label">Engineer</label>
-                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
+                <label className="form-label">Engineer *</label>
+                <EngineerSelect valueId={form.engineer_id} valueName={form.engineer_name}
+                  onChange={({id,name})=>setForm(f=>({...f,engineer_id:id,engineer_name:name}))} required/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">

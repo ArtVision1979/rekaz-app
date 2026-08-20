@@ -1,22 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
-import { useEngineers } from '../hooks/useEngineers.js'
+import EngineerSelect from '../components/EngineerSelect.jsx'
 
 const SEV_COLOR = { low:'badge-blue', medium:'badge-progress', high:'badge-open', critical:'badge-open' }
-const EMPTY = { project_id:'', visit_date: new Date().toISOString().split('T')[0], notes:'', severity:'low', status:'draft', engineer_name:'' }
-
-function EngineerSelect({ value, onChange }) {
-  const engineers = useEngineers()
-  return (
-    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">Select engineer...</option>
-      {engineers.map(e => (
-        <option key={e.id} value={e.full_name || e.email}>{e.full_name || e.email}</option>
-      ))}
-    </select>
-  )
-}
+const EMPTY = { project_id:'', visit_date: new Date().toISOString().split('T')[0], notes:'', severity:'low', status:'draft', engineer_id:null, engineer_name:'' }
 
 // ── Checklist Item Row ───────────────────────────────────────────────
 function ChecklistItem({ item, index, result, hasNote, editingNote, onResult, onToggleNote, onSaveNote }) {
@@ -181,7 +169,7 @@ export default function Visits() {
 
   function openEdit(v) {
     setEditVisit(v)
-    setForm({ project_id: v.project_id, visit_date: v.visit_date, notes: v.notes||'', severity: v.severity, status: v.status, engineer_name: v.engineer_name||'' })
+    setForm({ project_id: v.project_id, visit_date: v.visit_date, notes: v.notes||'', severity: v.severity, status: v.status, engineer_id: v.engineer_id||null, engineer_name: v.engineer_name||'' })
     setShowModal(true)
   }
 
@@ -233,7 +221,8 @@ export default function Visits() {
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
+                <EngineerSelect valueId={form.engineer_id} valueName={form.engineer_name}
+                  onChange={({id,name})=>setForm(f=>({...f,engineer_id:id,engineer_name:name}))} required/>
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
                 <div className="form-group">

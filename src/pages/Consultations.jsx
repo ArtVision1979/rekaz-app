@@ -1,22 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { useEngineers } from '../hooks/useEngineers.js'
+import EngineerSelect from '../components/EngineerSelect.jsx'
 
 const STATUS_COLORS = { pending:'badge-gray', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', completed:'Completed', cancelled:'Cancelled' }
-const EMPTY = { client_name:'', client_phone:'', topic:'', engineer_name:'', consultation_date: new Date().toISOString().split('T')[0], consultation_time:'', status:'pending', notes:'' }
-
-function EngineerSelect({ value, onChange }) {
-  const engineers = useEngineers()
-  return (
-    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">Select engineer...</option>
-      {engineers.map(e => (
-        <option key={e.id} value={e.full_name || e.email}>{e.full_name || e.email}</option>
-      ))}
-    </select>
-  )
-}
+const EMPTY = { client_name:'', client_phone:'', topic:'', engineer_id:null, engineer_name:'', consultation_date: new Date().toISOString().split('T')[0], consultation_time:'', status:'pending', notes:'' }
 
 export default function Consultations() {
   const [consultations, setConsultations] = useState([])
@@ -52,6 +40,7 @@ export default function Consultations() {
       client_name: item.client_name,
       client_phone: item.client_phone || '',
       topic: item.topic,
+      engineer_id: item.engineer_id || null,
       engineer_name: item.engineer_name || '',
       consultation_date: item.consultation_date,
       consultation_time: item.consultation_time || '',
@@ -128,7 +117,8 @@ export default function Consultations() {
               </div>
               <div className="form-group">
                 <label className="form-label">Engineer — المهندس المسؤول</label>
-                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
+                <EngineerSelect valueId={form.engineer_id} valueName={form.engineer_name}
+                  onChange={({id,name})=>setForm(f=>({...f,engineer_id:id,engineer_name:name}))} required/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">

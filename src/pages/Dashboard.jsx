@@ -3,6 +3,7 @@ import { supabase, getProjects } from '../lib/supabase.js'
 import { useNavigate } from 'react-router-dom'
 import { createBackup, checkBackupNeeded, saveBackupDate } from '../hooks/useBackup.js'
 import { useLang } from '../hooks/useSettings.js'
+import { useCurrentUser } from '../hooks/useCurrentUser.js'
 
 const TEXT = {
   en: {
@@ -41,10 +42,12 @@ export default function Dashboard() {
   const [milestones, setMilestones] = useState([])
   const [todayVisits, setTodayVisits] = useState([])
   const [todayConsultations, setTodayConsultations] = useState([])
+  const [myVisits, setMyVisits] = useState([])
   const [loading, setLoading] = useState(true)
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
   const navigate = useNavigate()
+  const { user: me } = useCurrentUser()
   const { lang } = useLang()
   const t = TEXT[lang]
   const today = new Date().toISOString().split('T')[0]
@@ -53,6 +56,26 @@ export default function Dashboard() {
     setBackupNeeded(checkBackupNeeded())
     load()
   }, [])
+
+  // «زياراتي» — يعتمد على engineer_id، وهو الربط الذي صار متاحاً بعد
+  // تعبئة جدول المستخدمين وإصلاح قائمة اختيار المهندس.
+  useEffect(() => {
+    if (!me?.id) { setMyVisits([]); return }
+    let alive = true
+    supabase.from('project_visits')
+      .select('*, projects(name)')
+      .eq('engineer_id', me.id)
+      .gte('scheduled_date', today)
+      .in('status', ['pending','scheduled'])
+      .order('scheduled_date').order('scheduled_time')
+      .limit(6)
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error) { console.error('تعذّر جلب زياراتي:', error.message); return }
+        setMyVisits(data || [])
+      })
+    return () => { alive = false }
+  }, [me?.id])
 
   async function load() {
     try {
@@ -141,6 +164,35 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* زياراتي — الزيارات المسندة للمستخدم الحالي عبر engineer_id */}
+      {me && myVisits.length > 0 && (
+        <div className="card" style={{marginBottom:16,border:'1px solid rgba(15,110,86,0.25)',background:'var(--green-light,#E1F5EE)'}}>
+          <div className="card-header">
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:18}}>👷</span>
+              <span className="card-title" style={{color:'#0F6E56'}}>
+                زياراتي القادمة — {me.full_name}
+              </span>
+            </div>
+            <button className="btn btn-sm" onClick={()=>navigate('/project-visits')}>{t.viewAll}</button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:10}}>
+            {myVisits.map(v=>(
+              <div key={v.id} style={{background:'var(--bg-card)',borderRadius:10,padding:'12px 14px',border:'0.5px solid var(--border)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <div style={{fontWeight:550,fontSize:13,color:'var(--text)'}}>{v.title}</div>
+                  <span style={{fontSize:11,fontWeight:600,color:'#0F6E56',background:'#E1F5EE',padding:'2px 8px',borderRadius:20,flexShrink:0,marginLeft:8}}>
+                    {v.scheduled_date === today ? 'اليوم' : new Date(v.scheduled_date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
+                  </span>
+                </div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>{v.projects?.name || '—'}</div>
+                {v.scheduled_time && <div style={{fontSize:11,color:'#0F6E56',marginTop:3}}>🕐 {v.scheduled_time.slice(0,5)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Today's Visits */}
       {(todayVisits.length > 0 || todayConsultations.length > 0) && (

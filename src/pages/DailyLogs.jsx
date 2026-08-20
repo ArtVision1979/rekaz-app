@@ -1,22 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
-import { useEngineers } from '../hooks/useEngineers.js'
+import EngineerSelect from '../components/EngineerSelect.jsx'
 
-const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'', engineer_name:'' }
+const EMPTY = { project_id:'', log_date: new Date().toISOString().split('T')[0], weather:'', workers_count:'', activities:'', issues:'', engineer_id:null, engineer_name:'' }
 const WEATHER = ['Sunny','Cloudy','Partly Cloudy','Rainy','Windy','Hot','Dusty']
-
-function EngineerSelect({ value, onChange }) {
-  const engineers = useEngineers()
-  return (
-    <select className="form-input" value={value} onChange={e => onChange(e.target.value)}>
-      <option value="">Select engineer...</option>
-      {engineers.map(e => (
-        <option key={e.id} value={e.full_name || e.email}>{e.full_name || e.email}</option>
-      ))}
-    </select>
-  )
-}
 
 export default function DailyLogs() {
   const [projects, setProjects] = useState([])
@@ -78,6 +66,7 @@ export default function DailyLogs() {
       workers_count: l.workers_count||'',
       activities: l.activities||'',
       issues: l.issues||'',
+      engineer_id: l.engineer_id||null,
       engineer_name: l.engineer_name||''
     })
     setShowModal(true)
@@ -117,7 +106,8 @@ export default function DailyLogs() {
             <form onSubmit={handleSave}>
               <div className="form-group">
                 <label className="form-label">Engineer</label>
-                <EngineerSelect value={form.engineer_name} onChange={val=>setForm(f=>({...f,engineer_name:val}))}/>
+                <EngineerSelect valueId={form.engineer_id} valueName={form.engineer_name}
+                  onChange={({id,name})=>setForm(f=>({...f,engineer_id:id,engineer_name:name}))} required/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
