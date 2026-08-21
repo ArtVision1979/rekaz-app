@@ -18,6 +18,7 @@ import ProjectVisits from './pages/ProjectVisits.jsx'
 import PeriodReport from './pages/PeriodReport.jsx'
 import PeriodicSupervision from './pages/PeriodicSupervision.jsx'
 import PeriodicVisit from './pages/PeriodicVisit.jsx'
+import PublicReport from './pages/PublicReport.jsx'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -30,6 +31,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      {/* تقرير العميل — عام بلا تسجيل دخول */}
+      <Route path="/r/:reportNo" element={<PublicReport />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="projects" element={<Projects />} />

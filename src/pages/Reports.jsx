@@ -317,8 +317,10 @@ export function Reports() {
       // لا نُرجع رابط التخزين المباشر: تخزين Supabase يقدّم ملفات .html
       // بترويسة نص عادي، فيراها العميل شيفرة خام والعربية مشوّهة.
       // الدالة report تقرأ الملف نفسه وتعيده بترويسة text/html صحيحة.
-      const base = import.meta.env.VITE_SUPABASE_URL || ''
-      return `${base}/functions/v1/report?no=${encodeURIComponent(reportNo)}`
+      // الرابط يشير لنطاق التطبيق على Vercel لا لـ Supabase: تخزين
+      // Supabase ودوالّه يفرضان ترويسة text/plain، فيرى العميل شيفرة
+      // خام وعربية مشوّهة. تحققنا من الترويسة فعلياً في الحالتين.
+      return `${window.location.origin}/r/${encodeURIComponent(reportNo)}`
     } catch(e) {
       console.error('تعذّرت أرشفة التقرير:', e?.message || e)
       return null
