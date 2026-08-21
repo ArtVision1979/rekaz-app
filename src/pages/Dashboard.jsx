@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { createBackup, checkBackupNeeded, saveBackupDate } from '../hooks/useBackup.js'
 import { useLang } from '../hooks/useSettings.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
+import NextVisitPanel from '../components/NextVisitPanel.jsx'
 
 const TEXT = {
   en: {
@@ -186,6 +187,9 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* جدولة الزيارة التالية — يخفي نفسه إن لم يكن هناك ما يحتاج موعداً */}
+      <NextVisitPanel />
 
       {/* فجوات الإشراف — ما يحتاج انتباهاً الآن */}
       {(attention.overdue.length > 0 || attention.noReport > 0 || attention.notSent > 0) && (
