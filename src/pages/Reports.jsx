@@ -605,9 +605,6 @@ export function Reports() {
 
             {existingReport && (
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                {existingReport.pdf_path && (
-                  <a className="btn btn-sm" href={existingReport.pdf_path} target="_blank" rel="noreferrer">👁 عرض</a>
-                )}
                 <button className="btn btn-sm" style={{color:'#0F6E56',borderColor:'#0F6E56'}}
                   onClick={sendViaWhatsapp}>واتساب</button>
                 <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}}
