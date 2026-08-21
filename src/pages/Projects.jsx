@@ -3,7 +3,7 @@ import { getProjects, createProject, supabase } from '../lib/supabase.js'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { active:'badge-progress', completed:'badge-done', on_hold:'badge-gray', cancelled:'badge-open' }
-const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', client_email:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', status:'active', progress:0 }
+const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', client_email:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', supervision_type:'stage', visits_per_month:'', supervision_months:'', status:'active', progress:0 }
 
 export default function Projects() {
   const systems = useConstructionSystems()
@@ -47,6 +47,9 @@ export default function Projects() {
       engineer_name: p.engineer_name||'', engineer_phone: p.engineer_phone||'',
       contractor_name: p.contractor_name||'', contractor_phone: p.contractor_phone||'',
       supervision_start: p.supervision_start||'', category_id: p.category_id||'',
+      supervision_type: p.supervision_type||'stage',
+      visits_per_month: p.visits_per_month ?? '',
+      supervision_months: p.supervision_months ?? '',
       status: p.status, progress: p.progress||0
     })
     setShowModal(true)
@@ -57,7 +60,18 @@ export default function Projects() {
     try {
       // القائمة المنسدلة تُرجع '' عند عدم الاختيار، وهي قيمة غير صالحة
       // لعمود uuid — نحوّلها إلى null قبل الحفظ
-      const payload = { ...form, category_id: form.category_id || null }
+      // القوائم والحقول الرقمية تُرجع '' عند الفراغ، وهي قيمة غير صالحة
+      // لأعمدة uuid و integer — نحوّلها إلى null قبل الحفظ
+      const num = v => (v === '' || v === null || v === undefined) ? null : Number(v)
+      const periodic = form.supervision_type === 'periodic'
+      const payload = {
+        ...form,
+        category_id: form.category_id || null,
+        supervision_start: form.supervision_start || null,
+        // حقول الإشراف الدوري لا معنى لها في إشراف المراحل
+        visits_per_month:   periodic ? num(form.visits_per_month)   : null,
+        supervision_months: periodic ? num(form.supervision_months) : null,
+      }
       if (editProject) { const { error } = await supabase.from('projects').update(payload).eq('id', editProject.id); if (error) throw error }
       else { await createProject(payload) }
       setShowModal(false); await load()
@@ -442,6 +456,37 @@ export default function Projects() {
               </div>
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <div className="form-group">
+                  <label className="form-label">نوع الإشراف · Supervision Type *</label>
+                  {/* نموذجان مختلفان: المراحل = قائمة زيارات ثابتة بتسلسل
+                      إنشائي. الدوري = عدد متفق عليه من الزيارات شهرياً حتى
+                      انتهاء المشروع، يُغلق كل شهر بإقرار المهندس. */}
+                  <select className="form-input" value={form.supervision_type||'stage'} required
+                    onChange={e=>setForm(f=>({...f,supervision_type:e.target.value}))}>
+                    <option value="stage">إشراف بالمراحل · Stage-based</option>
+                    <option value="periodic">إشراف دوري شهري · Periodic</option>
+                  </select>
+                </div>
+
+                {form.supervision_type === 'periodic' && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">زيارات الشهر المتفق عليها *</label>
+                      <input type="number" min="1" max="40" className="form-input" required
+                        value={form.visits_per_month}
+                        onChange={e=>setForm(f=>({...f,visits_per_month:e.target.value}))}
+                        placeholder="مثال: 8 (زيارتان أسبوعياً)"/>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">مدة العقد بالأشهر</label>
+                      <input type="number" min="1" max="120" className="form-input"
+                        value={form.supervision_months}
+                        onChange={e=>setForm(f=>({...f,supervision_months:e.target.value}))}
+                        placeholder="تُستخدم لحساب نسبة التقدّم"/>
+                    </div>
+                  </>
+                )}
+
                 <div className="form-group">
                   <label className="form-label">نظام الإنشاء · Construction System *</label>
                   {/* يحدد تسلسل زيارات المشروع: في البوست تنشن وال RCC
