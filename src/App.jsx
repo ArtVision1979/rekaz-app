@@ -15,6 +15,7 @@ import Drawings from './pages/Drawings.jsx'
 import Users from './pages/Users.jsx'
 import Consultations from './pages/Consultations.jsx'
 import ProjectVisits from './pages/ProjectVisits.jsx'
+import PeriodReport from './pages/PeriodReport.jsx'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -38,9 +39,9 @@ export default function App() {
         <Route path="photos" element={<Photos />} />
         <Route path="drawings" element={<Drawings />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="period-report" element={<PeriodReport />} />
         <Route path="schedule" element={<Schedule />} />
         <Route path="users" element={<Users />} />
-        <Route path="consultations" element={<Consultations />} />
         <Route path="consultations" element={<Consultations />} />
       </Route>
     </Routes>
