@@ -313,8 +313,12 @@ export function Reports() {
       const { error } = await supabase.storage.from('Rekaz')
         .upload(path, blob, { contentType: 'text/html;charset=utf-8', upsert: true })
       if (error) throw error
-      const { data } = supabase.storage.from('Rekaz').getPublicUrl(path)
-      return data.publicUrl
+
+      // لا نُرجع رابط التخزين المباشر: تخزين Supabase يقدّم ملفات .html
+      // بترويسة نص عادي، فيراها العميل شيفرة خام والعربية مشوّهة.
+      // الدالة report تقرأ الملف نفسه وتعيده بترويسة text/html صحيحة.
+      const base = import.meta.env.VITE_SUPABASE_URL || ''
+      return `${base}/functions/v1/report?no=${encodeURIComponent(reportNo)}`
     } catch(e) {
       console.error('تعذّرت أرشفة التقرير:', e?.message || e)
       return null
