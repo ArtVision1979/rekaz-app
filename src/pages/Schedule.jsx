@@ -5,6 +5,11 @@ import {
   subscribeToPush, getReminderMinutes, setReminderMinutes
 } from '../hooks/useNotifications.js'
 
+// التاريخ المحلي — toISOString يحوّل للتوقيت العالمي، والبحرين +3،
+// فمنتصف الليل محلياً يصير اليوم السابق عالمياً وتنزاح الأعمدة يوماً
+const localDate = d =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 const DAYS = ['Sat','Sun','Mon','Tue','Wed','Thu']
 const COLORS = ['#185FA5','#0F6E56','#854F0B','#A32D2D','#534AB7','#1D9E75']
 const BG = ['#E6F1FB','#E1F5EE','#FAEEDA','#FCEBEB','#EEEDFE','#E1F5EE']
@@ -44,8 +49,10 @@ export default function Schedule() {
 
   async function load() {
     try {
-      const start = weekDates[0].toISOString().split('T')[0]
-      const end = weekDates[5].toISOString().split('T')[0]
+      // نفس خطأ التوقيت: toISOString يزيح النافذة يوماً، فتُجلب
+      // من الجمعة إلى الأربعاء ولا تظهر زيارات الخميس إطلاقاً
+      const start = localDate(weekDates[0])
+      const end   = localDate(weekDates[5])
 
       const [{ data: pv }, p, { data: cons }] = await Promise.all([
         supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
@@ -85,7 +92,15 @@ export default function Schedule() {
     if (granted) await load()
   }
 
-  const times = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00']
+  // النطاق الافتراضي 07–20، لكنه يتمدّد ليشمل أي زيارة خارجه —
+  // زيارة الساعة 22:30 كانت تختفي تماماً بلا أي إشارة
+  const hoursInData = schedule
+    .map(s2 => parseInt((s2.scheduled_time || s2.consultation_time || '09:00').slice(0,2), 10))
+    .filter(h => Number.isFinite(h))
+  const startH = Math.min(7,  ...(hoursInData.length ? hoursInData : [7]))
+  const endH   = Math.max(20, ...(hoursInData.length ? hoursInData : [20]))
+  const times = Array.from({ length: endH - startH + 1 },
+    (_, i) => String(startH + i).padStart(2,'0') + ':00')
 
   const projectColorMap = {}
   projects.forEach((p,i) => { projectColorMap[p.id] = i % COLORS.length })
@@ -156,7 +171,7 @@ export default function Schedule() {
                 <tr key={time}>
                   <td style={{padding:'8px 10px',color:'var(--text-muted)',fontSize:11,borderBottom:'0.5px solid var(--border)'}}>{time}</td>
                   {weekDates.map((d,di) => {
-                    const dateStr = d.toISOString().split('T')[0]
+                    const dateStr = localDate(d)
                     const items = schedule.filter(s =>
                       s.scheduled_date === dateStr &&
                       (s.scheduled_time||'09:00').slice(0,2) === time.slice(0,2)

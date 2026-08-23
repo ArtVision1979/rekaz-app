@@ -5,6 +5,12 @@ import EngineerSelect from '../components/EngineerSelect.jsx'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
+// التاريخ المحلي — toISOString يزيح اليوم بين منتصف الليل و3 فجراً
+const localToday = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open', not_applicable:'badge-gray' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled', not_applicable:'لا تنطبق' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
@@ -330,7 +336,7 @@ export default function ProjectVisits() {
         setCForm({
           engineer_id:   v.engineer_id   || null,
           engineer_name: v.engineer_name || '',
-          scheduled_date: v.scheduled_date || now.toISOString().split('T')[0],
+          scheduled_date: v.scheduled_date || localToday(),
           scheduled_time: (v.scheduled_time || now.toTimeString().slice(0,5)).slice(0,5),
         })
         setCErr('')

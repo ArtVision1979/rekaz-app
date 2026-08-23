@@ -15,7 +15,10 @@ import { supabase } from '../lib/supabase.js'
 //      ولا نعتمد على updated_at لأنه يتغيّر مع أي تعديل عابر.
 // ─────────────────────────────────────────────────────────────────────
 
-const iso = d => d.toISOString().split('T')[0]
+// التاريخ المحلي — toISOString يحوّل للتوقيت العالمي، والبحرين +3،
+// فبين منتصف الليل و3 فجراً يُحسب «اليوم» على أنه أمس
+const iso = d =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
 function presetRange(kind) {
   const now = new Date()

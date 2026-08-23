@@ -15,7 +15,10 @@ import EngineerSelect from './EngineerSelect.jsx'
 // ─────────────────────────────────────────────────────────────────────
 
 const LIMIT = 6
-const iso = d => d.toISOString().split('T')[0]
+// التاريخ المحلي — toISOString يحوّل للتوقيت العالمي، والبحرين +3،
+// فبين منتصف الليل و3 فجراً يُحسب «اليوم» على أنه أمس
+const iso = d =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 const shift = n => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d) }
 
 export default function NextVisitPanel() {
