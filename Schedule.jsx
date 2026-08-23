@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getProjects, supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase.js'
+import { useEngineers } from '../hooks/useEngineers.js'
 import {
   requestNotificationPermission, getNotificationPermission, pushSupported,
   subscribeToPush, getReminderMinutes, setReminderMinutes
@@ -13,8 +14,18 @@ const localDate = d =>
 
 const DAYS    = ['Sat','Sun','Mon','Tue','Wed','Thu']
 const DAYS_AR = ['السبت','الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس']
-const COLORS  = ['#185FA5','#0F6E56','#854F0B','#A32D2D','#534AB7','#1D9E75']
-const BG      = ['#E6F1FB','#E1F5EE','#FAEEDA','#FCEBEB','#EEEDFE','#E1F5EE']
+
+// ─────────────────────────────────────────────────────────────────────
+//  اللون يدلّ على المهندس، لا على المشروع.
+//
+//  كان اللون مرتبطاً بترتيب المشروع، و٥٣ مشروعاً على ٦ ألوان يعني أن
+//  كل لون يتقاسمه تسعة مشاريع — فلا يدلّ على شيء. أما المهندسون فأربعة،
+//  فيصير لكل واحد لون خاص ويُقرأ «مَن في الموقع» من نظرة واحدة.
+// ─────────────────────────────────────────────────────────────────────
+const COLORS  = ['#185FA5','#0F6E56','#534AB7','#A32D2D','#1D9E75','#B0700B']
+const BG      = ['#E6F1FB','#E1F5EE','#EEEDFE','#FCEBEB','#E1F5EE','#FAEEDA']
+const UNKNOWN = { fg:'#5b5b5b', bg:'#EFEFEF' }   // زيارة بلا مهندس معروف
+const CONSULT = { fg:'#854F0B', bg:'#FDF0DC' }   // استشارة — ليست زيارة موقع
 
 const VIEW_KEY = 'rekaz.schedule.view'
 const hhmm = t => (t || '09:00').slice(0,5)
@@ -29,8 +40,8 @@ function getWeekDates(offset = 0) {
 
 export default function Schedule() {
   const nav = useNavigate()
+  const engineers = useEngineers()
   const [schedule, setSchedule] = useState([])
-  const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [week, setWeek] = useState(0)
   // العرض الافتراضي قائمة: أسبوع نموذجي فيه ٢-٣ زيارات، والشبكة
@@ -74,9 +85,10 @@ export default function Schedule() {
       const start = localDate(dates[0])
       const end   = localDate(dates[5])
 
-      const [{ data: pv }, p, { data: cons }] = await Promise.all([
+      // لم نعد نجلب كل المشاريع: اللون صار للمهندس، واسم المشروع يأتي
+      // مع الزيارة نفسها — فسقط استعلام كامل من كل تنقّل بين الأسابيع
+      const [{ data: pv }, { data: cons }] = await Promise.all([
         supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
-        getProjects(),
         supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).eq('status','pending').order('consultation_time')
       ])
 
@@ -99,7 +111,6 @@ export default function Schedule() {
       ]
 
       setSchedule(merged)
-      setProjects(p || [])
 
       // لا جدولة في المتصفح — الخادم يتولّى الإرسال عبر pg_cron،
       // فيصل التذكير بريداً وإشعاراً حتى لو كان البرنامج مغلقاً.
@@ -127,11 +138,36 @@ export default function Schedule() {
   const times = Array.from({ length: endH - startH + 1 },
     (_, i) => String(startH + i).padStart(2,'0') + ':00')
 
-  const projectColorMap = {}
-  projects.forEach((p,i) => { projectColorMap[p.id] = i % COLORS.length })
+  // خريطة ثابتة: المهندس ← لون. الترتيب من قائمة المهندسين (مرتّبة
+  // بالاسم) لا من بيانات هذا الأسبوع، حتى لا يتغيّر لون المهندس كلما
+  // تنقّلت بين الأسابيع.
+  const engColor = useMemo(() => {
+    const m = {}
+    engineers.forEach((e,i) => {
+      const c = { fg: COLORS[i % COLORS.length], bg: BG[i % BG.length], name: e.full_name || e.email }
+      m[e.id] = c
+      if (e.full_name) m[e.full_name] = c
+      if (e.email)     m[e.email]     = c
+    })
+    return m
+  }, [engineers])
 
-  const colorOf = item => item._type === 'consultation'
-    ? 2 : (projectColorMap[item.project_id] ?? 0)
+  const colorOf = item => {
+    if (item._type === 'consultation') return CONSULT
+    return engColor[item.engineer_id] || engColor[item.engineer_name] || UNKNOWN
+  }
+
+  // حضور كل مهندس هذا الأسبوع — يصلح دليلاً للألوان ومؤشراً للتوزيع
+  const legend = useMemo(() => {
+    const counts = {}
+    schedule.filter(s => s._type === 'visit').forEach(s => {
+      const k = s.engineer_name || '—'
+      counts[k] = (counts[k] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([name, n]) => ({ name, n, c: engColor[name] || UNKNOWN }))
+      .sort((a,b) => b.n - a.n)
+  }, [schedule, engColor])
 
   // أيام الأسبوع مع بنودها مرتّبة بالوقت — تُستخدم في عرض القائمة
   const byDay = weekDates.map((d, i) => ({
@@ -147,24 +183,27 @@ export default function Schedule() {
 
   const weekLabel = `${weekDates[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${weekDates[5].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`
 
+  const ell = { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }
+
   function Block({ item, showTime }) {
-    const ci = colorOf(item)
+    const c = colorOf(item)
     return (
-      <div onClick={() => open(item)} title="فتح المشروع"
+      <div onClick={() => open(item)} title={`${item._projectName} — ${item._label}${item.engineer_name ? ' — ' + item.engineer_name : ''}`}
         style={{
-          background: BG[ci], color: COLORS[ci],
+          background: c.bg, color: c.fg,
           borderRadius:6, padding:'4px 8px', fontSize:11,
           fontWeight:500, marginBottom:3, cursor:'pointer',
-          borderInlineStart: `3px solid ${COLORS[ci]}`
+          borderInlineStart: `3px solid ${c.fg}`
         }}>
-        <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        <div style={ell}>
           {notifPermission === 'granted' ? '🔔 ' : ''}
           {showTime && <span style={{opacity:.75,fontVariantNumeric:'tabular-nums'}}>{hhmm(item.scheduled_time)} </span>}
           {item._projectName}
         </div>
-        <div style={{fontSize:10,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-          {item._label}
-        </div>
+        <div style={{fontSize:10,opacity:0.8,...ell}}>{item._label}</div>
+        {item.engineer_name && (
+          <div style={{fontSize:10,fontWeight:700,marginTop:1,...ell}}>👷 {item.engineer_name}</div>
+        )}
       </div>
     )
   }
@@ -238,6 +277,22 @@ export default function Schedule() {
         </div>
       )}
 
+      {/* دليل الألوان — لون لكل مهندس، والعدد حِمله هذا الأسبوع */}
+      {!loading && legend.length > 0 && (
+        <div style={{display:'flex',gap:14,flexWrap:'wrap',alignItems:'center',
+                     marginBottom:12,fontSize:12}}>
+          {legend.map(l => (
+            <span key={l.name} style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{width:11,height:11,borderRadius:3,background:l.c.fg,flexShrink:0}}/>
+              <span style={{color:'var(--text-muted)'}}>
+                {l.name === '—' ? 'بلا مهندس' : l.name}
+                {' '}<strong style={{color:l.c.fg}}>{l.n}</strong>
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="card"><div style={{color:'var(--text-muted)',padding:16}}>Loading...</div></div>
       ) : view === 'agenda' ? (
@@ -271,28 +326,31 @@ export default function Schedule() {
 
                     <div style={{display:'flex',flexDirection:'column',gap:6}}>
                       {d.items.map(item => {
-                        const ci = colorOf(item)
+                        const c = colorOf(item)
                         return (
                           <div key={item.id} onClick={() => open(item)} title="فتح المشروع"
                             style={{display:'flex',gap:11,alignItems:'flex-start',cursor:'pointer',
-                                    background: BG[ci], borderRadius:7, padding:'9px 11px',
-                                    borderInlineStart:`3px solid ${COLORS[ci]}`}}>
-                            <span style={{fontSize:13,fontWeight:700,color:COLORS[ci],
+                                    background: c.bg, borderRadius:7, padding:'9px 11px',
+                                    borderInlineStart:`3px solid ${c.fg}`}}>
+                            <span style={{fontSize:13,fontWeight:700,color:c.fg,
                                           fontVariantNumeric:'tabular-nums',flexShrink:0,minWidth:44}}>
                               {hhmm(item.scheduled_time)}
                             </span>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:12.5,fontWeight:600,color:COLORS[ci],lineHeight:1.35}}>
+                              <div style={{fontSize:12.5,fontWeight:600,color:c.fg,lineHeight:1.35}}>
                                 {item._projectName}
                               </div>
                               <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
                                 {item._label}
-                                {item.engineer_name && <> · 👷 {item.engineer_name}</>}
                               </div>
                             </div>
-                            {notifPermission === 'granted' && (
-                              <span style={{fontSize:12,flexShrink:0}} title="تذكير مفعّل">🔔</span>
-                            )}
+                            <span style={{fontSize:11.5,fontWeight:700,color:c.fg,flexShrink:0,
+                                          display:'flex',alignItems:'center',gap:5}}>
+                              {item.engineer_name
+                                ? <>👷 {item.engineer_name}</>
+                                : <span style={{color:'#A32D2D',fontWeight:600}}>بلا مهندس</span>}
+                              {notifPermission === 'granted' && <span title="تذكير مفعّل">🔔</span>}
+                            </span>
                           </div>
                         )
                       })}
