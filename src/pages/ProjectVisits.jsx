@@ -288,7 +288,7 @@ export default function ProjectVisits() {
     try {
       // الرجوع من «منجزة» يمسح الإنجاز — لا يصح أن يقع بنقرة عابرة
       if (v.status === 'completed') {
-        if (!confirm('هذه الزيارة منجزة.\nهل تريد إعادتها إلى «معلّقة»؟')) return
+        if (!confirm('هذه الزيارة منجزة.\nستعود «معلّقة» ويُمسح موعدها (يبقى المهندس).\nمتابعة؟')) return
 
         // سجل زيارة الموقع أُنشئ عند الإنجاز — تركه بعد التراجع يعني
         // ظهور زيارة في السجل لم تحدث رسمياً
@@ -348,10 +348,17 @@ export default function ProjectVisits() {
         return
       }
 
+      // العودة إلى «معلّقة» تمسح الموعد: زيارة معلّقة بموعد محدد تظهر
+      // في «زياراتي القادمة» و«زيارات اليوم» كأنها موعد قائم
+      const revert = (v.status === 'completed' || v.status === 'scheduled') && nextStatus === 'pending'
+      const changes = revert
+        ? { status: nextStatus, scheduled_date: null, scheduled_time: null }
+        : { status: nextStatus }
+
       const { error: updErr } = await supabase.from('project_visits')
-        .update({ status: nextStatus }).eq('id', v.id)
+        .update(changes).eq('id', v.id)
       if (updErr) throw updErr
-      setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
+      setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, ...changes } : pv))
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
