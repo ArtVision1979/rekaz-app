@@ -1,0 +1,352 @@
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getProjects, supabase } from '../lib/supabase.js'
+import {
+  requestNotificationPermission, getNotificationPermission, pushSupported,
+  subscribeToPush, getReminderMinutes, setReminderMinutes
+} from '../hooks/useNotifications.js'
+
+// التاريخ المحلي — toISOString يحوّل للتوقيت العالمي، والبحرين +3،
+// فمنتصف الليل محلياً يصير اليوم السابق عالمياً وتنزاح الأعمدة يوماً
+const localDate = d =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+const DAYS    = ['Sat','Sun','Mon','Tue','Wed','Thu']
+const DAYS_AR = ['السبت','الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس']
+const COLORS  = ['#185FA5','#0F6E56','#854F0B','#A32D2D','#534AB7','#1D9E75']
+const BG      = ['#E6F1FB','#E1F5EE','#FAEEDA','#FCEBEB','#EEEDFE','#E1F5EE']
+
+const VIEW_KEY = 'rekaz.schedule.view'
+const hhmm = t => (t || '09:00').slice(0,5)
+
+function getWeekDates(offset = 0) {
+  const today = new Date()
+  const day = today.getDay()
+  const diff = day === 6 ? 0 : day + 1
+  const sat = new Date(today); sat.setDate(today.getDate() - diff + offset * 7)
+  return Array.from({length:6}, (_,i) => { const d = new Date(sat); d.setDate(sat.getDate()+i); return d })
+}
+
+export default function Schedule() {
+  const nav = useNavigate()
+  const [schedule, setSchedule] = useState([])
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [week, setWeek] = useState(0)
+  // العرض الافتراضي قائمة: أسبوع نموذجي فيه ٢-٣ زيارات، والشبكة
+  // تعرض ٩٦ خانة فارغة حولها. المستخدم يبدّل ويُحفظ اختياره.
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) || 'agenda' } catch { return 'agenda' }
+  })
+  // ملاحظة: لا نقرأ Notification.permission مباشرة — لو كان الكائن غير
+  // معرّف (بعض الـ WebView على أندرويد) يُرمى ReferenceError وتنهار الصفحة.
+  const [notifPermission, setNotifPermission] = useState(getNotificationPermission())
+  const [notifBefore, setNotifBefore] = useState(60)
+
+  const weekDates = useMemo(() => getWeekDates(week), [week])
+
+  function switchView(v) {
+    setView(v)
+    try { localStorage.setItem(VIEW_KEY, v) } catch { /* وضع التصفح الخاص */ }
+  }
+
+  useEffect(() => { load() }, [week])
+
+  // مدة التذكير محفوظة في الخادم لأنه هو من يرسل، لا المتصفح
+  useEffect(() => {
+    getReminderMinutes().then(setNotifBefore).catch(() => {})
+    // لو سبق أن مُنح الإذن، نتأكد أن اشتراك هذا الجهاز مسجّل
+    if (getNotificationPermission() === 'granted') subscribeToPush().catch(() => {})
+  }, [])
+
+  async function changeReminderMinutes(minutes) {
+    setNotifBefore(minutes)
+    const ok = await setReminderMinutes(minutes)
+    if (!ok) alert('تعذّر حفظ مدة التذكير. حاول مرة أخرى.')
+  }
+
+  async function load() {
+    setLoading(true)
+    try {
+      // نفس خطأ التوقيت: toISOString يزيح النافذة يوماً، فتُجلب
+      // من الجمعة إلى الأربعاء ولا تظهر زيارات الخميس إطلاقاً
+      const dates = getWeekDates(week)
+      const start = localDate(dates[0])
+      const end   = localDate(dates[5])
+
+      const [{ data: pv }, p, { data: cons }] = await Promise.all([
+        supabase.from('project_visits').select('*, projects(name)').gte('scheduled_date', start).lte('scheduled_date', end).in('status', ['pending','scheduled']).order('scheduled_time'),
+        getProjects(),
+        supabase.from('consultations').select('*').gte('consultation_date', start).lte('consultation_date', end).eq('status','pending').order('consultation_time')
+      ])
+
+      const merged = [
+        ...(pv || []).map(v => ({
+          ...v,
+          scheduled_time: v.scheduled_time || '09:00',
+          _label: v.title,
+          _projectName: v.projects?.name || '—',
+          _type: 'visit'
+        })),
+        ...(cons || []).map(c => ({
+          ...c,
+          scheduled_date: c.consultation_date,
+          scheduled_time: c.consultation_time || '09:00',
+          _label: c.topic,
+          _projectName: '💼 ' + c.client_name,
+          _type: 'consultation'
+        }))
+      ]
+
+      setSchedule(merged)
+      setProjects(p || [])
+
+      // لا جدولة في المتصفح — الخادم يتولّى الإرسال عبر pg_cron،
+      // فيصل التذكير بريداً وإشعاراً حتى لو كان البرنامج مغلقاً.
+    } catch(e) { console.error(e) } finally { setLoading(false) }
+  }
+
+  async function enableNotifications() {
+    const granted = await requestNotificationPermission()
+    setNotifPermission(granted ? 'granted' : 'denied')
+    if (granted) await load()
+  }
+
+  function open(item) {
+    if (item._type === 'consultation') nav('/consultations')
+    else if (item.project_id) nav(`/project-visits?project=${item.project_id}`)
+  }
+
+  // النطاق الافتراضي 07–20، لكنه يتمدّد ليشمل أي زيارة خارجه —
+  // زيارة الساعة 22:30 كانت تختفي تماماً بلا أي إشارة
+  const hoursInData = schedule
+    .map(s2 => parseInt(hhmm(s2.scheduled_time).slice(0,2), 10))
+    .filter(h => Number.isFinite(h))
+  const startH = Math.min(7,  ...(hoursInData.length ? hoursInData : [7]))
+  const endH   = Math.max(20, ...(hoursInData.length ? hoursInData : [20]))
+  const times = Array.from({ length: endH - startH + 1 },
+    (_, i) => String(startH + i).padStart(2,'0') + ':00')
+
+  const projectColorMap = {}
+  projects.forEach((p,i) => { projectColorMap[p.id] = i % COLORS.length })
+
+  const colorOf = item => item._type === 'consultation'
+    ? 2 : (projectColorMap[item.project_id] ?? 0)
+
+  // أيام الأسبوع مع بنودها مرتّبة بالوقت — تُستخدم في عرض القائمة
+  const byDay = weekDates.map((d, i) => ({
+    date: d,
+    index: i,
+    dateStr: localDate(d),
+    items: schedule
+      .filter(s => s.scheduled_date === localDate(d))
+      .sort((a,b) => hhmm(a.scheduled_time).localeCompare(hhmm(b.scheduled_time)))
+  }))
+  const total = schedule.length
+  const todayStr = localDate(new Date())
+
+  const weekLabel = `${weekDates[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${weekDates[5].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`
+
+  function Block({ item, showTime }) {
+    const ci = colorOf(item)
+    return (
+      <div onClick={() => open(item)} title="فتح المشروع"
+        style={{
+          background: BG[ci], color: COLORS[ci],
+          borderRadius:6, padding:'4px 8px', fontSize:11,
+          fontWeight:500, marginBottom:3, cursor:'pointer',
+          borderInlineStart: `3px solid ${COLORS[ci]}`
+        }}>
+        <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {notifPermission === 'granted' ? '🔔 ' : ''}
+          {showTime && <span style={{opacity:.75,fontVariantNumeric:'tabular-nums'}}>{hhmm(item.scheduled_time)} </span>}
+          {item._projectName}
+        </div>
+        <div style={{fontSize:10,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+          {item._label}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h3>Schedule</h3>
+          <div className="page-sub">
+            Week of {weekLabel}
+            {' · '}
+            <span style={{color: total ? 'inherit' : 'var(--text-muted)'}}>
+              {total} {total === 1 ? 'زيارة' : 'زيارة'}
+            </span>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          {/* تنقّل بين الأسابيع */}
+          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+            <button className="btn btn-sm" style={{fontSize:12}} onClick={()=>setWeek(w=>w-1)}>‹ السابق</button>
+            {week !== 0 && (
+              <button className="btn btn-sm" style={{fontSize:12}} onClick={()=>setWeek(0)}>هذا الأسبوع</button>
+            )}
+            <button className="btn btn-sm" style={{fontSize:12}} onClick={()=>setWeek(w=>w+1)}>التالي ›</button>
+          </div>
+
+          {/* تبديل العرض */}
+          <div style={{display:'flex',border:'1px solid var(--border)',borderRadius:7,overflow:'hidden'}}>
+            {[['agenda','قائمة'],['grid','شبكة']].map(([v,label]) => (
+              <button key={v} onClick={()=>switchView(v)}
+                style={{border:'none',padding:'5px 12px',fontSize:12,cursor:'pointer',
+                        background: view===v ? 'var(--blue-light,#E6F1FB)' : 'transparent',
+                        color: view===v ? 'var(--blue-dark,#12497f)' : 'var(--text-muted)',
+                        fontWeight: view===v ? 600 : 400}}>{label}</button>
+            ))}
+          </div>
+
+          {notifPermission === 'unsupported' ? (
+            <span style={{fontSize:12,color:'var(--text-muted)'}}>التذكيرات غير مدعومة على هذا الجهاز</span>
+          ) : notifPermission === 'granted' ? (
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:12,color:'#0F6E56'}}>
+                🔔 Reminders On
+              </span>
+              <select className="form-input" style={{width:120,fontSize:12}} value={notifBefore}
+                onChange={e=>changeReminderMinutes(parseInt(e.target.value))}>
+                <option value={15}>15 min before</option>
+                <option value={30}>30 min before</option>
+                <option value={60}>1 hour before</option>
+                <option value={120}>2 hours before</option>
+              </select>
+            </div>
+          ) : (
+            <button className="btn" style={{fontSize:12,color:'#185FA5',borderColor:'#185FA5'}} onClick={enableNotifications}>
+              🔔 Enable Reminders
+            </button>
+          )}
+        </div>
+      </div>
+
+      {notifPermission === 'denied' && (
+        <div style={{background:'var(--amber-light)',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--amber)'}}>
+          ⚠ Notifications blocked. Enable them in browser settings.
+        </div>
+      )}
+
+      {notifPermission === 'granted' && !pushSupported() && (
+        <div style={{background:'var(--amber-light)',border:'0.5px solid #EF9F27',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--amber)'}}>
+          ⚠ هذا المتصفح لا يدعم إشعارات الويب. ستصلك التذكيرات بالبريد الإلكتروني فقط.
+        </div>
+      )}
+
+      {loading ? (
+        <div className="card"><div style={{color:'var(--text-muted)',padding:16}}>Loading...</div></div>
+      ) : view === 'agenda' ? (
+        /* ── عرض القائمة: أيام فيها زيارات فقط ── */
+        <div className="card">
+          {total === 0 ? (
+            <div style={{color:'var(--text-muted)',padding:'26px 16px',textAlign:'center',fontSize:13}}>
+              لا زيارات مجدولة هذا الأسبوع.
+            </div>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              {byDay.filter(d => d.items.length).map(d => {
+                const isToday = d.dateStr === todayStr
+                return (
+                  <div key={d.dateStr}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7,
+                                 paddingBottom:6,borderBottom:'0.5px solid var(--border)'}}>
+                      <span style={{fontWeight:600,fontSize:13.5,
+                                    color: isToday ? 'var(--blue-dark,#12497f)' : 'inherit'}}>
+                        {DAYS_AR[d.index]} {d.date.getDate()}{' '}
+                        {d.date.toLocaleDateString('en-GB',{month:'short'})}
+                      </span>
+                      {isToday && (
+                        <span style={{background:'var(--blue-light,#E6F1FB)',color:'var(--blue-dark,#12497f)',
+                                      fontSize:10.5,fontWeight:700,padding:'2px 7px',borderRadius:11}}>اليوم</span>
+                      )}
+                      <span style={{fontSize:11.5,color:'var(--text-muted)'}}>
+                        {d.items.length} {d.items.length === 1 ? 'زيارة' : 'زيارات'}
+                      </span>
+                    </div>
+
+                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      {d.items.map(item => {
+                        const ci = colorOf(item)
+                        return (
+                          <div key={item.id} onClick={() => open(item)} title="فتح المشروع"
+                            style={{display:'flex',gap:11,alignItems:'flex-start',cursor:'pointer',
+                                    background: BG[ci], borderRadius:7, padding:'9px 11px',
+                                    borderInlineStart:`3px solid ${COLORS[ci]}`}}>
+                            <span style={{fontSize:13,fontWeight:700,color:COLORS[ci],
+                                          fontVariantNumeric:'tabular-nums',flexShrink:0,minWidth:44}}>
+                              {hhmm(item.scheduled_time)}
+                            </span>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12.5,fontWeight:600,color:COLORS[ci],lineHeight:1.35}}>
+                                {item._projectName}
+                              </div>
+                              <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
+                                {item._label}
+                                {item.engineer_name && <> · 👷 {item.engineer_name}</>}
+                              </div>
+                            </div>
+                            {notifPermission === 'granted' && (
+                              <span style={{fontSize:12,flexShrink:0}} title="تذكير مفعّل">🔔</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── عرض الشبكة: أعمدة متساوية بـ table-layout: fixed ── */
+        <div className="card" style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,
+                         minWidth:680,tableLayout:'fixed'}}>
+            <colgroup>
+              <col style={{width:56}} />
+              {weekDates.map((_,i) => <col key={i} style={{width:`${(100/6).toFixed(4)}%`}} />)}
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={{padding:'8px 10px',color:'var(--text-muted)',fontWeight:400,textAlign:'left',borderBottom:'0.5px solid var(--border)'}}></th>
+                {weekDates.map((d,i) => {
+                  const isToday = localDate(d) === todayStr
+                  return (
+                    <th key={i} style={{padding:'8px 6px',fontWeight:500,textAlign:'center',borderBottom:'0.5px solid var(--border)',background:isToday?'var(--blue-light)':'transparent',color:isToday?'var(--blue-dark)':'inherit',borderRadius:isToday?6:0}}>
+                      {DAYS[i]} {d.getDate()}
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {times.map(time => (
+                <tr key={time}>
+                  <td style={{padding:'8px 10px',color:'var(--text-muted)',fontSize:11,borderBottom:'0.5px solid var(--border)'}}>{time}</td>
+                  {weekDates.map((d,di) => {
+                    const dateStr = localDate(d)
+                    const items = schedule.filter(s =>
+                      s.scheduled_date === dateStr &&
+                      hhmm(s.scheduled_time).slice(0,2) === time.slice(0,2)
+                    )
+                    return (
+                      <td key={di} style={{padding:'4px',borderBottom:'0.5px solid var(--border)',verticalAlign:'top',height:36}}>
+                        {items.map(item => <Block key={item.id} item={item} showTime />)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
