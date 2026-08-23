@@ -15,20 +15,49 @@ export function useTheme() {
   return { theme, toggleTheme }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+//  اللغة — مخزن واحد يشترك فيه كل المكوّنات.
+//
+//  كانت useLang تُنشئ حالة مستقلة داخل كل مكوّن، فزرّ «عربي» في الشريط
+//  العلوي يغيّر لغة Layout وحده، وتبقى بقية الصفحات بالإنجليزية حتى
+//  يُعاد تحميل الصفحة. الآن التبديل يُبثّ إلى كل المشتركين فوراً.
+// ─────────────────────────────────────────────────────────────────────
+const LANG_KEY = 'rekaz-lang'
+const langSubs = new Set()
+
+function readLang() {
+  try { return localStorage.getItem(LANG_KEY) || 'en' } catch { return 'en' }
+}
+let currentLang = readLang()
+
+function applyLang(l) {
+  document.documentElement.setAttribute('dir', l === 'ar' ? 'rtl' : 'ltr')
+  document.documentElement.setAttribute('lang', l)
+}
+
 export function useLang() {
-  const [lang, setLang] = useState(() => localStorage.getItem('rekaz-lang') || 'en')
+  const [lang, setLangState] = useState(currentLang)
 
   useEffect(() => {
-    document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr')
-    document.documentElement.setAttribute('lang', lang)
-    localStorage.setItem('rekaz-lang', lang)
-  }, [lang])
+    const sub = l => setLangState(l)
+    langSubs.add(sub)
+    // لو تغيّرت اللغة قبل أن يُركَّب هذا المكوّن
+    if (currentLang !== lang) setLangState(currentLang)
+    applyLang(currentLang)
+    return () => { langSubs.delete(sub) }
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  function toggleLang() {
-    setLang(l => l === 'en' ? 'ar' : 'en')
+  function setLang(l) {
+    if (l === currentLang) return
+    currentLang = l
+    try { localStorage.setItem(LANG_KEY, l) } catch { /* وضع التصفح الخاص */ }
+    applyLang(l)
+    langSubs.forEach(fn => fn(l))
   }
 
-  return { lang, toggleLang }
+  function toggleLang() { setLang(currentLang === 'en' ? 'ar' : 'en') }
+
+  return { lang, toggleLang, setLang }
 }
 
 // Arabic translations
@@ -60,6 +89,22 @@ export const T = {
     taskTitle: 'Task Title', assignedTo: 'Assigned To', dueDate: 'Due Date',
     description: 'Description', weather: 'Weather', workers: 'Workers Count',
     activities: 'Activities', issues: 'Issues',
+    // الجدول
+    schWeekOf: 'Week of', schVisit: 'visit', schVisits: 'visits',
+    schPrev: '‹ Prev', schNext: 'Next ›', schThisWeek: 'This week',
+    schViewList: 'List', schViewGrid: 'Grid',
+    schNoVisits: 'No visits scheduled this week.',
+    schToday: 'Today', schUnassigned: 'Unassigned',
+    schOpenProject: 'Open project',
+    schRemindersOn: 'Reminders On', schEnableReminders: 'Enable Reminders',
+    schReminderSet: 'Reminder on',
+    schBefore15: '15 min before', schBefore30: '30 min before',
+    schBefore60: '1 hour before', schBefore120: '2 hours before',
+    schNotifBlocked: 'Notifications blocked. Enable them in browser settings.',
+    schNotifUnsupported: 'Reminders are not supported on this device.',
+    schPushUnsupported: 'This browser does not support web notifications. Reminders will arrive by email only.',
+    schReminderSaveFailed: 'Could not save the reminder time. Please try again.',
+    consultations: 'Consultations',
   },
   ar: {
     dashboard: 'لوحة التحكم', projects: 'المشاريع', siteVisits: 'زيارات المواقع',
@@ -88,5 +133,21 @@ export const T = {
     taskTitle: 'عنوان المهمة', assignedTo: 'مسند إلى', dueDate: 'تاريخ التسليم',
     description: 'الوصف', weather: 'الطقس', workers: 'عدد العمال',
     activities: 'الأنشطة', issues: 'المشاكل',
+    // الجدول
+    schWeekOf: 'أسبوع', schVisit: 'زيارة', schVisits: 'زيارات',
+    schPrev: '› السابق', schNext: 'التالي ‹', schThisWeek: 'هذا الأسبوع',
+    schViewList: 'قائمة', schViewGrid: 'شبكة',
+    schNoVisits: 'لا زيارات مجدولة هذا الأسبوع.',
+    schToday: 'اليوم', schUnassigned: 'بلا مهندس',
+    schOpenProject: 'فتح المشروع',
+    schRemindersOn: 'التذكيرات مفعّلة', schEnableReminders: 'تفعيل التذكيرات',
+    schReminderSet: 'تذكير مفعّل',
+    schBefore15: 'قبل ١٥ دقيقة', schBefore30: 'قبل ٣٠ دقيقة',
+    schBefore60: 'قبل ساعة', schBefore120: 'قبل ساعتين',
+    schNotifBlocked: 'الإشعارات محظورة. فعّلها من إعدادات المتصفح.',
+    schNotifUnsupported: 'التذكيرات غير مدعومة على هذا الجهاز.',
+    schPushUnsupported: 'هذا المتصفح لا يدعم إشعارات الويب. ستصلك التذكيرات بالبريد الإلكتروني فقط.',
+    schReminderSaveFailed: 'تعذّر حفظ مدة التذكير. حاول مرة أخرى.',
+    consultations: 'الاستشارات الهندسية',
   }
 }
