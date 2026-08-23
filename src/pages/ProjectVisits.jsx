@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
@@ -27,6 +27,7 @@ export default function ProjectVisits() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [newTemplateName, setNewTemplateName] = useState('')
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
   const [form, setForm] = useState({
     title:'', title_ar:'', engineer_id:null, engineer_name:'',
     scheduled_date:'', scheduled_time:'',
@@ -51,7 +52,11 @@ export default function ProjectVisits() {
     try {
       const { data: p } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
       setProjects(p || [])
-      if (p?.length) setSelectedProject(p[0])
+      // القدوم من تنبيه اللوحة يجب أن يفتح على المشروع المقصود لا على الأول
+      const wanted = searchParams.get('project')
+      const match = wanted ? (p || []).find(x => x.id === wanted) : null
+      if (match) setSelectedProject(match)
+      else if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
+import { useSearchParams } from 'react-router-dom'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
 function buildChecklistHtml(cl, res) {
@@ -81,6 +82,7 @@ export function Reports() {
   const [generatingFull, setGeneratingFull] = useState(false)
   const [notes, setNotes] = useState('')
   const dropdownRef = useRef(null)
+  const [searchParams] = useSearchParams()
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
@@ -99,7 +101,11 @@ export function Reports() {
     try {
       const p = await getProjects()
       setProjects(p || [])
-      if (p?.length) setSelectedProject(p[0])
+      // القدوم من تنبيه اللوحة يفتح على المشروع المقصود
+      const wanted = searchParams.get('project')
+      const match = wanted ? (p || []).find(x => x.id === wanted) : null
+      if (match) setSelectedProject(match)
+      else if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 

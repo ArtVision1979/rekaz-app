@@ -44,7 +44,9 @@ export default function Dashboard() {
   const [todayVisits, setTodayVisits] = useState([])
   const [todayConsultations, setTodayConsultations] = useState([])
   const [myVisits, setMyVisits] = useState([])
-  const [attention, setAttention] = useState({ overdue: [], overdueCount: 0, noReport: 0, notSent: 0 })
+  const [attention, setAttention] = useState({ overdue: [], overdueCount: 0, noReport: 0, noReportList: [], notSent: 0, notSentList: [] })
+  // أي بطاقة مفتوحة الآن — البطاقات كانت تنقل بلا سياق فتفتح على أول مشروع
+  const [openPane, setOpenPane] = useState('overdue')
   const [loading, setLoading] = useState(true)
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
@@ -65,11 +67,14 @@ export default function Dashboard() {
     let alive = true
     ;(async () => {
       const [{ data: od }, { data: sv }, { data: reps }, { count: odCount }] = await Promise.all([
-        supabase.from('project_visits').select('id, title, scheduled_date, engineer_name, projects(name)')
+        supabase.from('project_visits')
+          .select('id, project_id, title, title_ar, scheduled_date, engineer_name, projects(name)')
           .eq('status','scheduled').lt('scheduled_date', today)
-          .order('scheduled_date').limit(5),
-        supabase.from('site_visits').select('id'),
-        supabase.from('reports').select('visit_id, last_sent_at'),
+          .order('scheduled_date').limit(30),
+        supabase.from('site_visits').select('id, project_id, visit_date, notes, projects(name)')
+          .order('visit_date', { ascending: false }),
+        supabase.from('reports').select('id, report_no, visit_id, last_sent_at, created_at, projects(name), project_id')
+          .order('created_at', { ascending: false }),
         // العدّ الحقيقي — القائمة أعلاه محدودة بخمسة للعرض فقط،
         // وكان العدد يُقرأ منها فيظهر «5+» مهما بلغ الواقع
         supabase.from('project_visits').select('id', { count: 'exact', head: true })
@@ -77,9 +82,14 @@ export default function Dashboard() {
       ])
       if (!alive) return
       const withReport = new Set((reps||[]).map(r => r.visit_id).filter(Boolean))
-      const noReport = (sv||[]).filter(v => !withReport.has(v.id)).length
-      const notSent  = (reps||[]).filter(r => !r.last_sent_at).length
-      setAttention({ overdue: od || [], overdueCount: odCount ?? (od||[]).length, noReport, notSent })
+      const noReportList = (sv||[]).filter(v => !withReport.has(v.id))
+      const notSentList  = (reps||[]).filter(r => !r.last_sent_at)
+      setAttention({
+        overdue: od || [],
+        overdueCount: odCount ?? (od||[]).length,
+        noReport: noReportList.length,   noReportList: noReportList.slice(0,30),
+        notSent:  notSentList.length,    notSentList:  notSentList.slice(0,30),
+      })
     })().catch(e => console.error('تعذّر حساب الفجوات:', e?.message ?? e))
     return () => { alive = false }
   }, [])
@@ -212,39 +222,67 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:attention.overdue.length?14:0}}>
-            {attention.noReport > 0 && (
-              <div onClick={()=>navigate('/reports')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
-                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.noReport}</div>
-                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>زيارة بلا تقرير</div>
+          {/* البطاقات تفتح قائمتها هنا بدل الانتقال لشاشة تفتح على أول مشروع */}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
+            {[
+              { key:'noReport', n: attention.noReport,     label:'زيارة بلا تقرير',      color:'#A32D2D' },
+              { key:'notSent',  n: attention.notSent,      label:'تقرير لم يُرسل للعميل', color:'#854F0B' },
+              { key:'overdue',  n: attention.overdueCount, label:'زيارة فات موعدها',      color:'#A32D2D' },
+            ].filter(t => t.n > 0).map(t => (
+              <div key={t.key} onClick={()=>setOpenPane(p => p===t.key ? null : t.key)}
+                style={{cursor:'pointer',background:'var(--bg-card)',borderRadius:10,padding:'12px 16px',minWidth:150,
+                        border: openPane===t.key ? `1.5px solid ${t.color}` : '0.5px solid var(--border)'}}>
+                <div style={{fontSize:22,fontWeight:600,color:t.color}}>{t.n}</div>
+                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>{t.label}</div>
               </div>
-            )}
-            {attention.notSent > 0 && (
-              <div onClick={()=>navigate('/reports')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
-                <div style={{fontSize:22,fontWeight:600,color:'#854F0B'}}>{attention.notSent}</div>
-                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>تقرير لم يُرسل للعميل</div>
-              </div>
-            )}
-            {attention.overdue.length > 0 && (
-              <div onClick={()=>navigate('/project-visits')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
-                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.overdueCount}</div>
-                <div style={{fontSize:11.5,color:'var(--text-muted)'}}>زيارة فات موعدها</div>
-              </div>
-            )}
+            ))}
           </div>
 
-          {attention.overdue.map(v=>{
+          {openPane === 'overdue' && attention.overdue.map(v => {
             const days = Math.floor((new Date(today) - new Date(v.scheduled_date)) / 86400000)
             return (
-              <div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',borderTop:'0.5px solid rgba(0,0,0,.06)',fontSize:12.5}}>
+              <div key={v.id} onClick={()=>navigate(`/project-visits?project=${v.project_id}`)}
+                style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',cursor:'pointer',
+                        borderTop:'0.5px solid rgba(0,0,0,.06)',fontSize:12.5}}>
                 <span style={{fontWeight:600,color:'#A32D2D',minWidth:70}}>{days} يوماً</span>
                 <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                  {v.title} — {v.projects?.name || '—'}
+                  {v.title_ar || v.title} — {v.projects?.name || '—'}
                 </span>
                 <span style={{fontSize:11,color:'var(--text-muted)'}}>{v.engineer_name || 'بلا مهندس'}</span>
               </div>
             )
           })}
+
+          {openPane === 'noReport' && attention.noReportList.map(v => (
+            <div key={v.id} onClick={()=>navigate(`/visits?project=${v.project_id}`)}
+              style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',cursor:'pointer',
+                      borderTop:'0.5px solid rgba(0,0,0,.06)',fontSize:12.5}}>
+              <span style={{color:'var(--text-muted)',minWidth:88}}>{v.visit_date || '—'}</span>
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {v.notes || 'زيارة موقع'} — {v.projects?.name || '—'}
+              </span>
+            </div>
+          ))}
+
+          {openPane === 'notSent' && attention.notSentList.map(r => (
+            <div key={r.id} onClick={()=>navigate(`/reports?project=${r.project_id}`)}
+              style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',cursor:'pointer',
+                      borderTop:'0.5px solid rgba(0,0,0,.06)',fontSize:12.5}}>
+              <span style={{color:'#854F0B',minWidth:118,fontWeight:600}}>{r.report_no}</span>
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {r.projects?.name || '—'}
+              </span>
+              <span style={{fontSize:11,color:'var(--text-muted)'}}>
+                {(r.created_at || '').split('T')[0]}
+              </span>
+            </div>
+          ))}
+
+          {openPane && (
+            <div style={{fontSize:11,color:'var(--text-muted)',paddingTop:10,textAlign:'center'}}>
+              اضغط أي سطر للانتقال لمشروعه · اضغط البطاقة لإغلاق القائمة
+            </div>
+          )}
         </div>
       )}
 
