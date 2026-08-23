@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
@@ -28,6 +29,11 @@ export default function ProjectVisits() {
   const [newTemplateName, setNewTemplateName] = useState('')
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
+  // شريط الإتمام: لا تُعلَّم زيارة «منجزة» بلا مهندس وتاريخ ووقت،
+  // فبدل المنع نفتح شريطاً يستوفيها في مكانه
+  const [completing, setCompleting] = useState(null)   // visit id
+  const [cForm, setCForm] = useState({ engineer_id:null, engineer_name:'', scheduled_date:'', scheduled_time:'' })
+  const [cErr, setCErr] = useState('')
   const [form, setForm] = useState({
     title:'', title_ar:'', engineer_id:null, engineer_name:'',
     scheduled_date:'', scheduled_time:'',
@@ -164,6 +170,19 @@ export default function ProjectVisits() {
     e.preventDefault(); setSaving(true)
     try {
       const data = { ...form, project_id: selectedProject.id }
+
+      // نفس قاعدة شريط الإتمام — وإلا بقي هذا طريقاً ملتفّاً حولها
+      if (data.status === 'completed') {
+        const missing = []
+        if (!data.engineer_id)    missing.push('المهندس')
+        if (!data.scheduled_date) missing.push('التاريخ')
+        if (!data.scheduled_time) missing.push('الوقت')
+        if (missing.length) {
+          alert('لا يمكن تعليم الزيارة «منجزة» بدون: ' + missing.join(' و'))
+          setSaving(false)
+          return
+        }
+      }
       const becameCompleted = data.status === 'completed' && editVisit?.status !== 'completed'
       if (editVisit) { const { error } = await supabase.from('project_visits').update(data).eq('id', editVisit.id); if (error) throw error }
       else { const { error } = await supabase.from('project_visits').insert(data); if (error) throw error }
@@ -188,6 +207,31 @@ export default function ProjectVisits() {
   // إنجاز الزيارة: يُنشئ سجل زيارة الموقع ثم يعرض الانتقال لكتابة
   // التقرير. مشترك بين النقر على الحالة ونموذج التعديل، فكان السلوكان
   // مختلفين: النقر يُنشئ السجل والتعديل لا يفعل.
+  async function confirmComplete(v) {
+    setCErr('')
+    if (!cForm.engineer_id)    { setCErr('اختر المهندس'); return }
+    if (!cForm.scheduled_date) { setCErr('حدّد التاريخ'); return }
+    if (!cForm.scheduled_time) { setCErr('حدّد الوقت'); return }
+
+    try {
+      const patch = {
+        status: 'completed',
+        engineer_id:   cForm.engineer_id,
+        engineer_name: cForm.engineer_name,
+        scheduled_date: cForm.scheduled_date,
+        scheduled_time: cForm.scheduled_time,
+      }
+      const { error } = await supabase.from('project_visits').update(patch).eq('id', v.id)
+      if (error) throw error
+
+      setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, ...patch } : pv))
+      setCompleting(null)
+      await onCompleted({ ...v, ...patch })
+    } catch(e) {
+      setCErr('تعذّر الحفظ: ' + (e?.message ?? e))
+    }
+  }
+
   async function onCompleted(v) {
     const today = new Date().toISOString().split('T')[0]
     const visitDate = v.scheduled_date || today
@@ -224,12 +268,26 @@ export default function ProjectVisits() {
       }
 
       const nextStatus = STATUS_NEXT[v.status]
+
+      // الإنجاز يحتاج مهندساً وتاريخاً ووقتاً — نفتح الشريط مُعبّأً
+      // بأفضل تخمين بدل أن نحفظ سجلاً ناقصاً
+      if (nextStatus === 'completed') {
+        const now = new Date()
+        setCForm({
+          engineer_id:   v.engineer_id   || null,
+          engineer_name: v.engineer_name || '',
+          scheduled_date: v.scheduled_date || now.toISOString().split('T')[0],
+          scheduled_time: (v.scheduled_time || now.toTimeString().slice(0,5)).slice(0,5),
+        })
+        setCErr('')
+        setCompleting(v.id)
+        return
+      }
+
       const { error: updErr } = await supabase.from('project_visits')
         .update({ status: nextStatus }).eq('id', v.id)
       if (updErr) throw updErr
-
       setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
-      if (nextStatus === 'completed') await onCompleted(v)
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
@@ -596,7 +654,8 @@ export default function ProjectVisits() {
                   </tr></thead>
                   <tbody>
                     {visits.map((v,i)=>(
-                      <tr key={v.id} style={{opacity:v.status==='cancelled'?0.5:1}}>
+                      <React.Fragment key={v.id}>
+                      <tr style={{opacity:v.status==='cancelled'?0.5:1}}>
                         <td style={{color:'var(--text-muted)',fontSize:11}}>{i+1}</td>
                         <td>
                           <div style={{fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
@@ -612,6 +671,41 @@ export default function ProjectVisits() {
                           <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(v)}>Delete</button>
                         </div></td>
                       </tr>
+
+                      {/* شريط الإتمام — يستوفي المهندس والتاريخ والوقت قبل
+                          تعليم الزيارة منجزة */}
+                      {completing === v.id && (
+                        <tr>
+                          <td colSpan={7} style={{background:'#E1F5EE',padding:'12px 14px'}}>
+                            <div style={{display:'flex',gap:9,alignItems:'center',flexWrap:'wrap'}}>
+                              <span style={{fontSize:12.5,fontWeight:600,color:'#0F6E56'}}>
+                                إتمام الزيارة —
+                              </span>
+                              <div style={{width:186}}>
+                                <EngineerSelect valueId={cForm.engineer_id} valueName={cForm.engineer_name}
+                                  placeholder="اختر المهندس *"
+                                  onChange={({id,name})=>setCForm(f=>({...f,engineer_id:id,engineer_name:name}))}/>
+                              </div>
+                              <input type="date" className="form-input" style={{width:150,fontSize:12.5}}
+                                value={cForm.scheduled_date}
+                                onChange={e=>setCForm(f=>({...f,scheduled_date:e.target.value}))}/>
+                              <input type="time" className="form-input" style={{width:118,fontSize:12.5}}
+                                value={cForm.scheduled_time}
+                                onChange={e=>setCForm(f=>({...f,scheduled_time:e.target.value}))}/>
+
+                              <button type="button" className="btn btn-sm btn-primary" style={{fontSize:12}}
+                                onClick={()=>confirmComplete(v)}>✓ تأكيد الإنجاز</button>
+                              <button type="button" className="btn btn-sm" style={{fontSize:12}}
+                                onClick={()=>{setCompleting(null);setCErr('')}}>إلغاء</button>
+
+                              {cErr && (
+                                <span style={{color:'#A32D2D',fontSize:12,fontWeight:600}}>{cErr}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
