@@ -44,7 +44,7 @@ export default function Dashboard() {
   const [todayVisits, setTodayVisits] = useState([])
   const [todayConsultations, setTodayConsultations] = useState([])
   const [myVisits, setMyVisits] = useState([])
-  const [attention, setAttention] = useState({ overdue: [], noReport: 0, notSent: 0 })
+  const [attention, setAttention] = useState({ overdue: [], overdueCount: 0, noReport: 0, notSent: 0 })
   const [loading, setLoading] = useState(true)
   const [backupNeeded, setBackupNeeded] = useState(false)
   const [backing, setBacking] = useState(false)
@@ -64,18 +64,22 @@ export default function Dashboard() {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [{ data: od }, { data: sv }, { data: reps }] = await Promise.all([
+      const [{ data: od }, { data: sv }, { data: reps }, { count: odCount }] = await Promise.all([
         supabase.from('project_visits').select('id, title, scheduled_date, engineer_name, projects(name)')
           .eq('status','scheduled').lt('scheduled_date', today)
           .order('scheduled_date').limit(5),
         supabase.from('site_visits').select('id'),
-        supabase.from('reports').select('visit_id, last_sent_at')
+        supabase.from('reports').select('visit_id, last_sent_at'),
+        // العدّ الحقيقي — القائمة أعلاه محدودة بخمسة للعرض فقط،
+        // وكان العدد يُقرأ منها فيظهر «5+» مهما بلغ الواقع
+        supabase.from('project_visits').select('id', { count: 'exact', head: true })
+          .eq('status','scheduled').lt('scheduled_date', today)
       ])
       if (!alive) return
       const withReport = new Set((reps||[]).map(r => r.visit_id).filter(Boolean))
       const noReport = (sv||[]).filter(v => !withReport.has(v.id)).length
       const notSent  = (reps||[]).filter(r => !r.last_sent_at).length
-      setAttention({ overdue: od || [], noReport, notSent })
+      setAttention({ overdue: od || [], overdueCount: odCount ?? (od||[]).length, noReport, notSent })
     })().catch(e => console.error('تعذّر حساب الفجوات:', e?.message ?? e))
     return () => { alive = false }
   }, [])
@@ -223,7 +227,7 @@ export default function Dashboard() {
             )}
             {attention.overdue.length > 0 && (
               <div onClick={()=>navigate('/project-visits')} style={{cursor:'pointer',background:'var(--bg-card)',border:'0.5px solid var(--border)',borderRadius:10,padding:'12px 16px',minWidth:150}}>
-                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.overdue.length}+</div>
+                <div style={{fontSize:22,fontWeight:600,color:'#A32D2D'}}>{attention.overdueCount}</div>
                 <div style={{fontSize:11.5,color:'var(--text-muted)'}}>زيارة فات موعدها</div>
               </div>
             )}
