@@ -19,6 +19,7 @@ import PeriodReport from './pages/PeriodReport.jsx'
 import PeriodicSupervision from './pages/PeriodicSupervision.jsx'
 import PeriodicVisit from './pages/PeriodicVisit.jsx'
 import PublicReport from './pages/PublicReport.jsx'
+import ResetPassword from './pages/ResetPassword.jsx'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -33,6 +34,8 @@ export default function App() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       {/* تقرير العميل — عام بلا تسجيل دخول */}
       <Route path="/r/:reportNo" element={<PublicReport />} />
+      {/* تعيين كلمة مرور جديدة من رابط البريد — خارج تسجيل الدخول */}
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="projects" element={<Projects />} />

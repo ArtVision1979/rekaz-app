@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { signIn } from '../lib/supabase.js'
+import { signIn, supabase } from '../lib/supabase.js'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -7,6 +7,23 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [focused, setFocused] = useState(null)
+  // استعادة كلمة المرور — لم يكن لها أي مسار في البرنامج، فكان
+  // كل نسيان يتطلب فتح لوحة Supabase يدوياً
+  const [mode, setMode] = useState('signin')   // signin | reset
+  const [notice, setNotice] = useState('')
+
+  async function handleReset(e) {
+    e.preventDefault(); setError(''); setNotice(''); setLoading(true)
+    try {
+      const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (err) throw err
+      setNotice('أُرسل رابط الاستعادة إلى بريدك. افتحه من نفس الجهاز.')
+    } catch (err) {
+      setError(err.message || 'تعذّر إرسال رابط الاستعادة')
+    } finally { setLoading(false) }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -76,7 +93,7 @@ export default function Login() {
               Sign in to your account
             </p>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={mode==='reset' ? handleReset : handleSubmit}>
               <div style={{marginBottom:16}}>
                 <label style={{display:'block',fontSize:12,color:'rgba(255,255,255,0.5)',marginBottom:8,letterSpacing:0.5}}>
                   EMAIL ADDRESS
@@ -100,7 +117,7 @@ export default function Login() {
                 />
               </div>
 
-              <div style={{marginBottom:24}}>
+              <div style={{marginBottom:24,display: mode==='reset' ? 'none' : 'block'}}>
                 <label style={{display:'block',fontSize:12,color:'rgba(255,255,255,0.5)',marginBottom:8,letterSpacing:0.5}}>
                   PASSWORD
                 </label>
@@ -112,7 +129,7 @@ export default function Login() {
                   onFocus={() => setFocused('password')}
                   onBlur={() => setFocused(null)}
                   placeholder="••••••••"
-                  required
+                  required={mode!=='reset'}
                   style={{
                     width:'100%',padding:'12px 16px',
                     background:'rgba(255,255,255,0.06)',
@@ -122,6 +139,12 @@ export default function Login() {
                   }}
                 />
               </div>
+
+              {notice && (
+                <div style={{background:'rgba(15,110,86,0.2)',border:'1px solid rgba(15,110,86,0.45)',color:'#7fe0c0',fontSize:12,padding:'10px 14px',borderRadius:8,marginBottom:16,lineHeight:1.6}}>
+                  {notice}
+                </div>
+              )}
 
               {error && (
                 <div style={{background:'rgba(163,45,45,0.2)',border:'1px solid rgba(163,45,45,0.4)',color:'#ff8585',fontSize:12,padding:'10px 14px',borderRadius:8,marginBottom:16}}>
@@ -145,9 +168,18 @@ export default function Login() {
                     <span style={{width:14,height:14,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'white',borderRadius:'50%',display:'inline-block',animation:'spin 0.8s linear infinite'}}/>
                     Signing in...
                   </span>
-                ) : 'Sign In →'}
+                ) : (mode==='reset' ? 'إرسال رابط الاستعادة' : 'Sign In →')}
               </button>
             </form>
+
+            <div style={{textAlign:'center',marginTop:18}}>
+              <button type="button"
+                onClick={()=>{ setMode(m=>m==='reset'?'signin':'reset'); setError(''); setNotice('') }}
+                style={{background:'none',border:'none',color:'rgba(255,255,255,0.45)',
+                        fontSize:12.5,cursor:'pointer',textDecoration:'underline',padding:4}}>
+                {mode==='reset' ? '← العودة لتسجيل الدخول' : 'نسيت كلمة المرور؟'}
+              </button>
+            </div>
           </div>
 
           <div style={{textAlign:'center',marginTop:24}}>
