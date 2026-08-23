@@ -289,6 +289,33 @@ export default function ProjectVisits() {
       // الرجوع من «منجزة» يمسح الإنجاز — لا يصح أن يقع بنقرة عابرة
       if (v.status === 'completed') {
         if (!confirm('هذه الزيارة منجزة.\nهل تريد إعادتها إلى «معلّقة»؟')) return
+
+        // سجل زيارة الموقع أُنشئ عند الإنجاز — تركه بعد التراجع يعني
+        // ظهور زيارة في السجل لم تحدث رسمياً
+        const label = v.title + (v.title_ar ? ' — ' + v.title_ar : '')
+        const { data: sv } = await supabase.from('site_visits')
+          .select('id').eq('project_id', v.project_id)
+          .eq('visit_date', v.scheduled_date).eq('notes', label).maybeSingle()
+
+        if (sv?.id) {
+          const [cl, rp, ph] = await Promise.all([
+            supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+            supabase.from('reports').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+            supabase.from('visit_photos').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+          ])
+          const attached = (cl.count||0) + (rp.count||0) + (ph.count||0)
+
+          if (attached === 0) {
+            if (confirm('لهذه الزيارة سجل في «زيارات المواقع» وهو فارغ.\nهل تحذفه أيضاً؟')) {
+              const { error: dErr } = await supabase.from('site_visits').delete().eq('id', sv.id)
+              if (dErr) throw dErr
+            }
+          } else {
+            alert('تنبيه: سجل زيارة الموقع المرتبط يحتوي بيانات ' +
+                  `(${cl.count||0} بند فحص · ${rp.count||0} تقرير · ${ph.count||0} صورة)، ` +
+                  'فلن يُحذف تلقائياً. احذفه يدوياً من شاشة زيارات المواقع إن أردت.')
+          }
+        }
       }
 
       const nextStatus = STATUS_NEXT[v.status]
