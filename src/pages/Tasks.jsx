@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getTasks, createTask, updateTask, getProjects, supabase } from '../lib/supabase.js'
 import { useEngineers } from '../hooks/useEngineers.js'
@@ -25,9 +26,16 @@ export default function Tasks() {
   const engineers = useEngineers()
   const { user: me } = useCurrentUser()
   const dropdownRef = useRef(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // وضع «كل المشاريع»: القدوم من تنبيه اللوحة يجب أن يعرض المتأخرات
+  // أينما كانت، لا أن يفتح على أول مشروع وهو غالباً خالٍ من المهام
+  const allMode = searchParams.get('filter') === 'overdue'
 
   useEffect(() => { loadProjects() }, [])
-  useEffect(() => { if (selectedProject) loadTasks(selectedProject.id) }, [selectedProject])
+  useEffect(() => {
+    if (allMode) loadAllOverdue()
+    else if (selectedProject) loadTasks(selectedProject.id)
+  }, [selectedProject, allMode])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -43,8 +51,25 @@ export default function Tasks() {
     try {
       const p = await getProjects()
       setProjects(p || [])
-      if (p?.length) setSelectedProject(p[0])
+      if (p?.length && !allMode) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
+  }
+
+  async function loadAllOverdue() {
+    setLoading(true)
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*, projects(name, project_no)')
+        .in('status', ['open','in_progress'])
+        .lt('due_date', today)
+        .order('due_date')
+      if (error) throw error
+      setTasks(data || [])
+    } catch(e) {
+      console.error('تعذّر جلب المهام المتأخرة:', e?.message ?? e)
+    } finally { setLoading(false) }
   }
 
   async function loadTasks(projectId) {
@@ -78,7 +103,7 @@ export default function Tasks() {
       // تسجيل من أنشأ المهمة — صار ممكناً بعد ربط جدول المستخدمين
       else { await createTask({ ...form, created_by: me?.id ?? null }) }
       setShowModal(false)
-      await loadTasks(selectedProject.id)
+      if (allMode) await loadAllOverdue(); else await loadTasks(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
@@ -87,7 +112,7 @@ export default function Tasks() {
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', t.id)
       if (error) throw error
-      await loadTasks(selectedProject.id)
+      if (allMode) await loadAllOverdue(); else await loadTasks(selectedProject.id)
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
@@ -285,16 +310,36 @@ export default function Tasks() {
         )}
       </div>
 
-      {selectedProject && (
+      {(selectedProject || allMode) && (
         <>
           {/* Project Info + Filter */}
           <div className="card" style={{marginBottom:16}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{fontWeight:500,fontSize:15}}>{selectedProject.name}</div>
-                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
-                  {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
-                </div>
+                {allMode ? (
+                  <>
+                    <div style={{fontWeight:600,fontSize:15,color:'#A32D2D'}}>
+                      المهام المتأخرة — كل المشاريع
+                    </div>
+                    <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
+                      {tasks.length} مهمة فات موعدها
+                      {' · '}
+                      <button type="button"
+                        onClick={()=>{ setSearchParams({}); }}
+                        style={{background:'none',border:'none',padding:0,color:'#185FA5',
+                                cursor:'pointer',textDecoration:'underline',fontSize:12}}>
+                        العودة لعرض مشروع واحد
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{fontWeight:500,fontSize:15}}>{selectedProject.name}</div>
+                    <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
+                      {selectedProject.project_no} · {selectedProject.location||'—'} · {selectedProject.client_name||'—'}
+                    </div>
+                  </>
+                )}
               </div>
               <div style={{display:'flex',gap:6}}>
                 {['all','open','resolved'].map(f=>(
@@ -342,6 +387,11 @@ export default function Tasks() {
                           <div style={{fontWeight:500,textDecoration:t.status==='resolved'?'line-through':'none',color:t.status==='resolved'?'var(--text-muted)':'var(--text)'}}>
                             {t.title}
                           </div>
+                          {allMode && t.projects?.name && (
+                            <div style={{fontSize:11.5,color:'#185FA5',marginTop:2}}>
+                              🏗 {t.projects.name}
+                            </div>
+                          )}
                           {t.description && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{t.description}</div>}
                         </td>
                         <td style={{color:'var(--text-muted)',fontSize:12}}>{t.assigned_to||'—'}</td>

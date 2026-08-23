@@ -117,12 +117,19 @@ export default function Dashboard() {
       setMilestones(ms || [])
       setTodayVisits(tv || [])
       setTodayConsultations(tc || [])
-      const overdue = (tasks||[]).filter(t => t.due_date && t.due_date < today)
+      // العدّ من قائمة محدودة بـ limit(6) كان يُظهر «6 متأخرة» مهما بلغ
+      // العدد الحقيقي. نعدّ من الخادم بلا حد.
+      const [{ count: openCount }, { count: overdueCount }] = await Promise.all([
+        supabase.from('tasks').select('id', { count: 'exact', head: true })
+          .in('status', ['open','in_progress']),
+        supabase.from('tasks').select('id', { count: 'exact', head: true })
+          .in('status', ['open','in_progress']).lt('due_date', today),
+      ])
       setStats({
         total: (p||[]).length,
         active: (p||[]).filter(x => x.status === 'active').length,
-        openTasks: (tasks||[]).length,
-        overdueTasks: overdue.length,
+        openTasks: openCount ?? (tasks||[]).length,
+        overdueTasks: overdueCount ?? 0,
         visits: (visits||[]).length,
         reports: (reports||[]).length
       })
@@ -165,7 +172,7 @@ export default function Dashboard() {
           <span style={{color:'var(--red)',fontSize:13,fontWeight:500,flex:1}}>
             {stats.overdueTasks} {t.overdueWarning}
           </span>
-          <button className="btn btn-sm" style={{color:'var(--red)',borderColor:'var(--red)'}} onClick={()=>navigate('/tasks')}>{t.view}</button>
+          <button className="btn btn-sm" style={{color:'var(--red)',borderColor:'var(--red)'}} onClick={()=>navigate('/tasks?filter=overdue')}>{t.view}</button>
         </div>
       )}
 
