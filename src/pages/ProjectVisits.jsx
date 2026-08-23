@@ -5,11 +5,11 @@ import EngineerSelect from '../components/EngineerSelect.jsx'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
-const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
-const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
+const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open', not_applicable:'badge-gray' }
+const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled', not_applicable:'لا تنطبق' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
 // «منجزة» نهاية الدورة — الرجوع منها يتطلب تأكيداً صريحاً (انظر toggleStatus)
-const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
+const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D', not_applicable:'#888' }
 
 export default function ProjectVisits() {
   const [projects, setProjects] = useState([])
@@ -35,6 +35,9 @@ export default function ProjectVisits() {
   const [cTarget, setCTarget] = useState('completed')  // الحالة المقصودة
   const [cForm, setCForm] = useState({ engineer_id:null, engineer_name:'', scheduled_date:'', scheduled_time:'' })
   const [cErr, setCErr] = useState('')
+  // الزيارات السابقة غير المنجزة — تُعرض عند القفز، ولكل واحدة مآل
+  const [blockers, setBlockers] = useState([])          // [{id,title,title_ar,order_index}]
+  const [bDisp, setBDisp] = useState({})                // id -> {mode:'keep'|'na', reason:''}
   const [form, setForm] = useState({
     title:'', title_ar:'', engineer_id:null, engineer_name:'',
     scheduled_date:'', scheduled_time:'',
@@ -222,11 +225,30 @@ export default function ProjectVisits() {
         scheduled_date: cForm.scheduled_date,
         scheduled_time: cForm.scheduled_time,
       }
+      // المآلات المطلوبة للزيارات السابقة قبل المضيّ قدماً
+      const naRows = blockers.filter(b => bDisp[b.id]?.mode === 'na')
+      const missingReason = naRows.find(b => !String(bDisp[b.id]?.reason || '').trim())
+      if (missingReason) {
+        setCErr(`اكتب سبب عدم انطباق: ${missingReason.title_ar || missingReason.title}`)
+        return
+      }
+
+      for (const b of naRows) {
+        const { error: bErr } = await supabase.from('project_visits')
+          .update({ status: 'not_applicable', skip_reason: bDisp[b.id].reason.trim() })
+          .eq('id', b.id)
+        if (bErr) throw bErr
+      }
+
       const { error } = await supabase.from('project_visits').update(patch).eq('id', v.id)
       if (error) throw error
 
-      setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, ...patch } : pv))
-      setCompleting(null)
+      const naIds = new Set(naRows.map(b => b.id))
+      setVisits(prev => prev.map(pv =>
+        pv.id === v.id ? { ...pv, ...patch }
+        : naIds.has(pv.id) ? { ...pv, status:'not_applicable', skip_reason: bDisp[pv.id].reason.trim() }
+        : pv))
+      setCompleting(null); setBlockers([]); setBDisp({})
       // سجل زيارة الموقع والانتقال للتقرير عند الإنجاز فقط
       if (cTarget === 'completed') await onCompleted({ ...v, ...patch })
     } catch(e) {
@@ -286,6 +308,15 @@ export default function ProjectVisits() {
         })
         setCErr('')
         setCTarget(nextStatus)
+
+        // كل زيارة سابقة لم تُنجز — قائمة مسطّحة لا سلسلة متداخلة
+        const earlier = (nextStatus === 'completed')
+          ? visits.filter(x => (x.order_index ?? 0) < (v.order_index ?? 0)
+                            && !['completed','cancelled','not_applicable'].includes(x.status))
+          : []
+        setBlockers(earlier)
+        setBDisp(Object.fromEntries(earlier.map(x => [x.id, { mode:'keep', reason:'' }])))
+
         setCompleting(v.id)
         return
       }
@@ -667,6 +698,9 @@ export default function ProjectVisits() {
                           <div style={{fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
                           {v.title_ar && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{v.title_ar}</div>}
                           {v.notes && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{v.notes}</div>}
+                          {v.status==='not_applicable' && v.skip_reason && (
+                            <div style={{fontSize:11,color:'#854F0B',marginTop:2}}>↳ {v.skip_reason}</div>
+                          )}
                         </td>
                         <td style={{color:'var(--text-muted)',fontSize:12}}>{v.engineer_name||'—'}</td>
                         <td style={{color:'var(--text-muted)',fontSize:12}}>{v.scheduled_date||'—'}</td>
@@ -711,6 +745,48 @@ export default function ProjectVisits() {
                                 <span style={{color:'#A32D2D',fontSize:12,fontWeight:600}}>{cErr}</span>
                               )}
                             </div>
+
+                            {blockers.length > 0 && (
+                              <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid rgba(0,0,0,.1)'}}>
+                                <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:8}}>
+                                  <span style={{fontSize:12.5,fontWeight:700,color:'#854F0B'}}>
+                                    ⚠ {blockers.length} زيارة سابقة لم تُنجز
+                                  </span>
+                                  <button type="button" className="btn btn-sm" style={{fontSize:11}}
+                                    onClick={()=>setBDisp(d=>Object.fromEntries(blockers.map(b=>[b.id,{...d[b.id],mode:'keep'}])))}>
+                                    كلها ما زالت مطلوبة
+                                  </button>
+                                  <button type="button" className="btn btn-sm" style={{fontSize:11}}
+                                    onClick={()=>setBDisp(d=>Object.fromEntries(blockers.map(b=>[b.id,{...d[b.id],mode:'na'}])))}>
+                                    كلها لا تنطبق
+                                  </button>
+                                </div>
+
+                                {blockers.map(b => {
+                                  const d = bDisp[b.id] || { mode:'keep', reason:'' }
+                                  return (
+                                    <div key={b.id} style={{display:'flex',gap:7,alignItems:'center',
+                                                            flexWrap:'wrap',padding:'5px 0'}}>
+                                      <span style={{fontSize:12,minWidth:210}}>
+                                        <span style={{color:'var(--text-muted)'}}>{b.order_index}.</span>{' '}
+                                        {b.title_ar || b.title}
+                                      </span>
+                                      <select className="form-input" style={{width:168,fontSize:12}}
+                                        value={d.mode}
+                                        onChange={e=>setBDisp(x=>({...x,[b.id]:{...d,mode:e.target.value}}))}>
+                                        <option value="keep">ما زالت مطلوبة</option>
+                                        <option value="na">لا تنطبق على المشروع</option>
+                                      </select>
+                                      {d.mode === 'na' && (
+                                        <input className="form-input" style={{flex:1,minWidth:180,fontSize:12}}
+                                          value={d.reason} placeholder="السبب — إلزامي"
+                                          onChange={e=>setBDisp(x=>({...x,[b.id]:{...d,reason:e.target.value}}))}/>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
