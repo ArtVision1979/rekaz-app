@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
+import { useNavigate } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { pending:'badge-gray', scheduled:'badge-blue', completed:'badge-done', cancelled:'badge-open' }
 const STATUS_LABELS = { pending:'Pending', scheduled:'Scheduled', completed:'Completed', cancelled:'Cancelled' }
 const STATUS_NEXT = { pending:'scheduled', scheduled:'completed', completed:'pending', cancelled:'pending' }
+// «منجزة» نهاية الدورة — الرجوع منها يتطلب تأكيداً صريحاً (انظر toggleStatus)
 const STATUS_PRINT_COLOR = { pending:'#888', scheduled:'#185FA5', completed:'#0F6E56', cancelled:'#A32D2D' }
 
 export default function ProjectVisits() {
@@ -24,6 +26,7 @@ export default function ProjectVisits() {
   const [projectSearch, setProjectSearch] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [newTemplateName, setNewTemplateName] = useState('')
+  const nav = useNavigate()
   const [form, setForm] = useState({
     title:'', title_ar:'', engineer_id:null, engineer_name:'',
     scheduled_date:'', scheduled_time:'',
@@ -156,10 +159,15 @@ export default function ProjectVisits() {
     e.preventDefault(); setSaving(true)
     try {
       const data = { ...form, project_id: selectedProject.id }
+      const becameCompleted = data.status === 'completed' && editVisit?.status !== 'completed'
       if (editVisit) { const { error } = await supabase.from('project_visits').update(data).eq('id', editVisit.id); if (error) throw error }
       else { const { error } = await supabase.from('project_visits').insert(data); if (error) throw error }
       setShowModal(false)
       await loadVisits(selectedProject.id)
+      // كان التعديل لا يُنشئ سجل الزيارة ولا ينقل للتقرير، بعكس النقر
+      if (becameCompleted) {
+        await onCompleted({ ...data, id: editVisit?.id, project_id: selectedProject.id })
+      }
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
@@ -172,34 +180,54 @@ export default function ProjectVisits() {
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
+  // إنجاز الزيارة: يُنشئ سجل زيارة الموقع ثم يعرض الانتقال لكتابة
+  // التقرير. مشترك بين النقر على الحالة ونموذج التعديل، فكان السلوكان
+  // مختلفين: النقر يُنشئ السجل والتعديل لا يفعل.
+  async function onCompleted(v) {
+    const today = new Date().toISOString().split('T')[0]
+    const visitDate = v.scheduled_date || today
+    const label = v.title + (v.title_ar ? ' — ' + v.title_ar : '')
+
+    const { data: existing } = await supabase.from('site_visits')
+      .select('id').eq('project_id', v.project_id)
+      .eq('visit_date', visitDate).eq('notes', label).maybeSingle()
+
+    if (!existing) {
+      const { error } = await supabase.from('site_visits').insert({
+        project_id: v.project_id,
+        visit_date: visitDate,
+        engineer_id: v.engineer_id || null,
+        engineer_name: v.engineer_name || '',
+        notes: label,
+        severity: 'low',
+        status: 'submitted'
+      })
+      if (error) throw error
+    }
+
+    // بدل أن يبحث المهندس عن المشروع في شاشة زيارات المواقع
+    if (confirm('تم إنجاز الزيارة وأُنشئ سجلها.\n\nهل تفتح زيارات المواقع الآن لتحديد نقاط الفحص وكتابة التقرير؟')) {
+      nav(`/visits?project=${v.project_id}`)
+    }
+  }
+
   async function toggleStatus(v) {
     try {
-      const nextStatus = STATUS_NEXT[v.status]
-      const { error: updErr } = await supabase.from('project_visits').update({ status: nextStatus }).eq('id', v.id)
-      if (updErr) throw updErr
-      if (nextStatus === 'completed') {
-        const today = new Date().toISOString().split('T')[0]
-        const visitDate = v.scheduled_date || today
-        const { data: existing } = await supabase.from('site_visits').select('id').eq('project_id', v.project_id).eq('visit_date', visitDate).eq('notes', v.title + (v.title_ar ? ' — ' + v.title_ar : '')).maybeSingle()
-        if (!existing) {
-          const createSiteVisit = confirm('Create a Site Visit report for: ' + v.title + '?')
-          if (createSiteVisit) {
-            const { error: visitErr } = await supabase.from('site_visits').insert({
-              project_id: v.project_id,
-              visit_date: visitDate,
-              engineer_id: v.engineer_id || null,
-              engineer_name: v.engineer_name || '',
-              notes: v.title + (v.title_ar ? ' — ' + v.title_ar : ''),
-              severity: 'low',
-              status: 'submitted'
-            })
-            if (visitErr) throw visitErr
-          }
-        }
+      // الرجوع من «منجزة» يمسح الإنجاز — لا يصح أن يقع بنقرة عابرة
+      if (v.status === 'completed') {
+        if (!confirm('هذه الزيارة منجزة.\nهل تريد إعادتها إلى «معلّقة»؟')) return
       }
+
+      const nextStatus = STATUS_NEXT[v.status]
+      const { error: updErr } = await supabase.from('project_visits')
+        .update({ status: nextStatus }).eq('id', v.id)
+      if (updErr) throw updErr
+
       setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, status: nextStatus } : pv))
+      if (nextStatus === 'completed') await onCompleted(v)
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
+
 
   async function saveTemplates() {
     try {

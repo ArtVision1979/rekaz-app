@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import SectionHelp from '../components/SectionHelp.jsx'
 import { getProjects, supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
@@ -62,6 +63,7 @@ function ChecklistItem({ item, index, result, hasNote, editingNote, onResult, on
 export default function Visits() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
+  const [searchParams] = useSearchParams()
   const [visits, setVisits] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -92,7 +94,12 @@ export default function Visits() {
     try {
       const p = await getProjects()
       setProjects(p || [])
-      if (p?.length) setSelectedProject(p[0])
+      // القدوم من «زيارات المشاريع» بعد إنجاز زيارة: نفتح على مشروعه
+      // مباشرة بدل أن يبحث عنه المهندس في قائمة 53 مشروعاً
+      const wanted = searchParams.get('project')
+      const match = wanted ? (p || []).find(x => x.id === wanted) : null
+      if (match) setSelectedProject(match)
+      else if (p?.length) setSelectedProject(p[0])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
