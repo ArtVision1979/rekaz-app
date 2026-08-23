@@ -29,11 +29,12 @@ export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams()
   // وضع «كل المشاريع»: القدوم من تنبيه اللوحة يجب أن يعرض المتأخرات
   // أينما كانت، لا أن يفتح على أول مشروع وهو غالباً خالٍ من المهام
-  const allMode = searchParams.get('filter') === 'overdue'
+  const allFilter = searchParams.get('filter')          // 'overdue' | 'open'
+  const allMode = allFilter === 'overdue' || allFilter === 'open'
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => {
-    if (allMode) loadAllOverdue()
+    if (allMode) loadAllTasks()
     else if (selectedProject) loadTasks(selectedProject.id)
   }, [selectedProject, allMode])
 
@@ -55,20 +56,22 @@ export default function Tasks() {
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
-  async function loadAllOverdue() {
+  // عرض عبر كل المشاريع — لأن القدوم من اللوحة يجب أن يُظهر ما نبّهت
+  // إليه، لا أن يفتح على أول مشروع وهو غالباً خالٍ من المهام
+  async function loadAllTasks() {
     setLoading(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const { data, error } = await supabase
-        .from('tasks')
+      let q = supabase.from('tasks')
         .select('*, projects(name, project_no)')
         .in('status', ['open','in_progress'])
-        .lt('due_date', today)
-        .order('due_date')
+      if (allFilter === 'overdue') {
+        q = q.lt('due_date', new Date().toISOString().split('T')[0])
+      }
+      const { data, error } = await q.order('due_date', { nullsFirst: false })
       if (error) throw error
       setTasks(data || [])
     } catch(e) {
-      console.error('تعذّر جلب المهام المتأخرة:', e?.message ?? e)
+      console.error('تعذّر جلب المهام:', e?.message ?? e)
     } finally { setLoading(false) }
   }
 
@@ -103,7 +106,7 @@ export default function Tasks() {
       // تسجيل من أنشأ المهمة — صار ممكناً بعد ربط جدول المستخدمين
       else { await createTask({ ...form, created_by: me?.id ?? null }) }
       setShowModal(false)
-      if (allMode) await loadAllOverdue(); else await loadTasks(selectedProject.id)
+      if (allMode) await loadAllTasks(); else await loadTasks(selectedProject.id)
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
@@ -112,7 +115,7 @@ export default function Tasks() {
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', t.id)
       if (error) throw error
-      if (allMode) await loadAllOverdue(); else await loadTasks(selectedProject.id)
+      if (allMode) await loadAllTasks(); else await loadTasks(selectedProject.id)
     } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
   }
 
@@ -318,11 +321,12 @@ export default function Tasks() {
               <div>
                 {allMode ? (
                   <>
-                    <div style={{fontWeight:600,fontSize:15,color:'#A32D2D'}}>
-                      المهام المتأخرة — كل المشاريع
+                    <div style={{fontWeight:600,fontSize:15,
+                                 color: allFilter==='overdue' ? '#A32D2D' : '#185FA5'}}>
+                      {allFilter==='overdue' ? 'المهام المتأخرة' : 'المهام المفتوحة'} — كل المشاريع
                     </div>
                     <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
-                      {tasks.length} مهمة فات موعدها
+                      {tasks.length} {allFilter==='overdue' ? 'مهمة فات موعدها' : 'مهمة مفتوحة'}
                       {' · '}
                       <button type="button"
                         onClick={()=>{ setSearchParams({}); }}

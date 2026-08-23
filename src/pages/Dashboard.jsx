@@ -180,7 +180,7 @@ export default function Dashboard() {
       <div className="stats-grid" style={{marginBottom:20}}>
         {[
           { label: t.activeProjects, value: stats.active, sub:`${stats.total} ${t.total}`, color:'#185FA5', icon:'🏗️', path:'/projects' },
-          { label: t.openTasks, value: stats.openTasks, sub:`${stats.overdueTasks} ${t.overdue}`, color: stats.overdueTasks > 0 ? '#A32D2D' : '#0F6E56', icon:'✓', path:'/tasks' },
+          { label: t.openTasks, value: stats.openTasks, sub:`${stats.overdueTasks} ${t.overdue}`, color: stats.overdueTasks > 0 ? '#A32D2D' : '#0F6E56', icon:'✓', path:'/tasks?filter=open' },
           { label: t.siteVisits, value: stats.visits, sub: t.thisPeriod, color:'#0F6E56', icon:'📍', path:'/visits' },
           { label: t.reports, value: stats.reports, sub: t.generated, color:'#854F0B', icon:'📄', path:'/reports' },
         ].map(s => (
