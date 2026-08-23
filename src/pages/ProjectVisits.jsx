@@ -32,6 +32,7 @@ export default function ProjectVisits() {
   // شريط الإتمام: لا تُعلَّم زيارة «منجزة» بلا مهندس وتاريخ ووقت،
   // فبدل المنع نفتح شريطاً يستوفيها في مكانه
   const [completing, setCompleting] = useState(null)   // visit id
+  const [cTarget, setCTarget] = useState('completed')  // الحالة المقصودة
   const [cForm, setCForm] = useState({ engineer_id:null, engineer_name:'', scheduled_date:'', scheduled_time:'' })
   const [cErr, setCErr] = useState('')
   const [form, setForm] = useState({
@@ -215,7 +216,7 @@ export default function ProjectVisits() {
 
     try {
       const patch = {
-        status: 'completed',
+        status: cTarget,
         engineer_id:   cForm.engineer_id,
         engineer_name: cForm.engineer_name,
         scheduled_date: cForm.scheduled_date,
@@ -226,7 +227,8 @@ export default function ProjectVisits() {
 
       setVisits(prev => prev.map(pv => pv.id === v.id ? { ...pv, ...patch } : pv))
       setCompleting(null)
-      await onCompleted({ ...v, ...patch })
+      // سجل زيارة الموقع والانتقال للتقرير عند الإنجاز فقط
+      if (cTarget === 'completed') await onCompleted({ ...v, ...patch })
     } catch(e) {
       setCErr('تعذّر الحفظ: ' + (e?.message ?? e))
     }
@@ -271,7 +273,10 @@ export default function ProjectVisits() {
 
       // الإنجاز يحتاج مهندساً وتاريخاً ووقتاً — نفتح الشريط مُعبّأً
       // بأفضل تخمين بدل أن نحفظ سجلاً ناقصاً
-      if (nextStatus === 'completed') {
+      // الجدولة والإتمام كلاهما يحتاج مهندساً وتاريخاً ووقتاً.
+      // الزيارة المجدولة بلا موعد لا تظهر في أي تذكير ولا قائمة
+      // متأخرات — وهي أصل تراكم مئات الزيارات بلا تاريخ.
+      if (nextStatus === 'completed' || nextStatus === 'scheduled') {
         const now = new Date()
         setCForm({
           engineer_id:   v.engineer_id   || null,
@@ -280,6 +285,7 @@ export default function ProjectVisits() {
           scheduled_time: (v.scheduled_time || now.toTimeString().slice(0,5)).slice(0,5),
         })
         setCErr('')
+        setCTarget(nextStatus)
         setCompleting(v.id)
         return
       }
@@ -676,10 +682,11 @@ export default function ProjectVisits() {
                           تعليم الزيارة منجزة */}
                       {completing === v.id && (
                         <tr>
-                          <td colSpan={7} style={{background:'#E1F5EE',padding:'12px 14px'}}>
+                          <td colSpan={7} style={{background: cTarget==='completed' ? '#E1F5EE' : '#E6F1FB',padding:'12px 14px'}}>
                             <div style={{display:'flex',gap:9,alignItems:'center',flexWrap:'wrap'}}>
-                              <span style={{fontSize:12.5,fontWeight:600,color:'#0F6E56'}}>
-                                إتمام الزيارة —
+                              <span style={{fontSize:12.5,fontWeight:600,
+                                            color: cTarget==='completed' ? '#0F6E56' : '#185FA5'}}>
+                                {cTarget==='completed' ? 'إتمام الزيارة —' : 'جدولة الزيارة —'}
                               </span>
                               <div style={{width:186}}>
                                 <EngineerSelect valueId={cForm.engineer_id} valueName={cForm.engineer_name}
@@ -694,7 +701,9 @@ export default function ProjectVisits() {
                                 onChange={e=>setCForm(f=>({...f,scheduled_time:e.target.value}))}/>
 
                               <button type="button" className="btn btn-sm btn-primary" style={{fontSize:12}}
-                                onClick={()=>confirmComplete(v)}>✓ تأكيد الإنجاز</button>
+                                onClick={()=>confirmComplete(v)}>
+                                {cTarget==='completed' ? '✓ تأكيد الإنجاز' : '📅 تأكيد الجدولة'}
+                              </button>
                               <button type="button" className="btn btn-sm" style={{fontSize:12}}
                                 onClick={()=>{setCompleting(null);setCErr('')}}>إلغاء</button>
 
