@@ -5,7 +5,18 @@ import { getProjects, supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
 
 const SEV_COLOR = { low:'badge-blue', medium:'badge-progress', high:'badge-open', critical:'badge-open' }
-const EMPTY = { project_id:'', visit_date: new Date().toISOString().split('T')[0], notes:'', severity:'low', status:'draft', engineer_id:null, engineer_name:'' }
+// التاريخ المحلي — toISOString يحوّل للتوقيت العالمي، والبحرين +3،
+// فبين منتصف الليل و٣ فجراً يُسجَّل «اليوم» على أنه أمس
+const localToday = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+const EMPTY = { project_id:'', project_visit_id:'', visit_date: localToday(), notes:'', severity:'low', status:'draft', engineer_id:null, engineer_name:'' }
+
+// خيار الزيارة خارج الخطة — لا يصح إلزام الربط دائماً: الإشراف الشهري
+// بلا خطة مراحل أصلاً، وقد تقع زيارة استثنائية في المرحلي أيضاً
+const OFF_PLAN = '__off_plan__'
 
 // ── Checklist Item Row ───────────────────────────────────────────────
 function ChecklistItem({ item, index, result, hasNote, editingNote, onResult, onToggleNote, onSaveNote }) {
@@ -69,6 +80,8 @@ export default function Visits() {
   const [showModal, setShowModal] = useState(false)
   const [editVisit, setEditVisit] = useState(null)
   const [form, setForm] = useState(EMPTY)
+  // زيارات خطة المشروع — أصلٌ يُربط به سجل الزيارة
+  const [planVisits, setPlanVisits] = useState([])
   const [saving, setSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -106,12 +119,19 @@ export default function Visits() {
   async function loadVisits(projectId) {
     setLoading(true)
     try {
-      const { data } = await supabase
-        .from('site_visits')
-        .select('*, construction_stages(name)')
-        .eq('project_id', projectId)
-        .order('visit_date', { ascending: false })
+      const [{ data }, { data: pv }] = await Promise.all([
+        supabase.from('site_visits')
+          .select('*, construction_stages(name)')
+          .eq('project_id', projectId)
+          .order('visit_date', { ascending: false }),
+        // زيارات الخطة — لربط السجل بأصله بدل تركه يتيماً
+        supabase.from('project_visits')
+          .select('id, title, title_ar, status, is_rework, engineer_id, engineer_name, scheduled_date, order_index')
+          .eq('project_id', projectId)
+          .order('order_index').order('is_rework')
+      ])
       setVisits(data || [])
+      setPlanVisits(pv || [])
     } catch(e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -176,18 +196,43 @@ export default function Visits() {
 
   function openEdit(v) {
     setEditVisit(v)
-    setForm({ project_id: v.project_id, visit_date: v.visit_date, notes: v.notes||'', severity: v.severity, status: v.status, engineer_id: v.engineer_id||null, engineer_name: v.engineer_name||'' })
+    setForm({ project_id: v.project_id, project_visit_id: v.project_visit_id || OFF_PLAN,
+      visit_date: v.visit_date, notes: v.notes||'', severity: v.severity, status: v.status,
+      engineer_id: v.engineer_id||null, engineer_name: v.engineer_name||'' })
     setShowModal(true)
+  }
+
+  // اختيار زيارة من الخطة يملأ الملاحظة والمهندس — نفس ما يفعله
+  // الإنجاز من شاشة زيارات المشاريع، فيتطابق السجلّان بدل أن يفترقا
+  function pickPlanVisit(id) {
+    if (id === OFF_PLAN || !id) { setForm(f => ({ ...f, project_visit_id: id })); return }
+    const pv = planVisits.find(x => x.id === id)
+    if (!pv) { setForm(f => ({ ...f, project_visit_id: id })); return }
+    const label = pv.title + (pv.title_ar ? ' — ' + pv.title_ar : '') + (pv.is_rework ? ' — زيارة إضافية' : '')
+    setForm(f => ({
+      ...f,
+      project_visit_id: id,
+      notes: f.notes?.trim() ? f.notes : label,
+      engineer_id:   f.engineer_id   || pv.engineer_id   || null,
+      engineer_name: f.engineer_name || pv.engineer_name || '',
+      visit_date:    pv.scheduled_date || f.visit_date,
+    }))
   }
 
   async function handleSave(e) {
     e.preventDefault(); setSaving(true)
     try {
+      // «خارج الخطة» علامة في الواجهة فقط — تُحفظ null في قاعدة البيانات
+      const payload = {
+        ...form,
+        project_visit_id: (!form.project_visit_id || form.project_visit_id === OFF_PLAN)
+          ? null : form.project_visit_id
+      }
       if (editVisit) {
-        const { error } = await supabase.from('site_visits').update(form).eq('id', editVisit.id)
+        const { error } = await supabase.from('site_visits').update(payload).eq('id', editVisit.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('site_visits').insert(form)
+        const { error } = await supabase.from('site_visits').insert(payload)
         if (error) throw error
       }
       setShowModal(false)
@@ -195,13 +240,54 @@ export default function Visits() {
     } catch(e) { alert(e.message) } finally { setSaving(false) }
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  //  حذف زيارة موقع — ما يتبعها ليس متساوياً
+  //
+  //  المهام مرتبطة بقيد يمنع الحذف، فكانت الرسالة تظهر بالإنجليزية
+  //  («violates foreign key constraint») بلا سبيل للمتابعة.
+  //
+  //  والتقارير أخطر: قيدها متسلسل، فكان حذف الزيارة يمحو تقرير العميل
+  //  الصادر بلا أي تحذير. لذلك نُحصي التابعين ونسمّيهم قبل السؤال.
+  // ─────────────────────────────────────────────────────────────────
   async function handleDelete(v) {
-    if (!confirm('Delete this visit?')) return
     try {
+      const [tk, rp, cl, ph] = await Promise.all([
+        supabase.from('tasks').select('id,title,status').eq('visit_id', v.id),
+        supabase.from('reports').select('report_no').eq('visit_id', v.id),
+        supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).eq('visit_id', v.id),
+        supabase.from('visit_photos').select('id',{count:'exact',head:true}).eq('visit_id', v.id),
+      ])
+      const tasks   = tk.data || []
+      const openTk  = tasks.filter(t => ['open','in_progress'].includes(t.status))
+      const reports = rp.data || []
+
+      const lines = ['حذف هذه الزيارة نهائياً:', '']
+      if (reports.length) {
+        lines.push(`⚠ سيُحذف معها ${reports.length} تقرير صادر للعميل ` +
+                   `(${reports.map(r => r.report_no).join('، ')}) — ولا يمكن استرجاعه.`)
+      }
+      if (cl.count)  lines.push(`· ${cl.count} بند فحص`)
+      if (ph.count)  lines.push(`· ${ph.count} صورة`)
+      if (tasks.length) {
+        lines.push(`· ${tasks.length} مهمة متابعة` +
+                   (openTk.length ? ` — منها ${openTk.length} ما زالت مفتوحة` : ''))
+      }
+      if (!reports.length && !cl.count && !ph.count && !tasks.length) {
+        lines.push('لا يتبعها شيء.')
+      }
+      lines.push('', 'متابعة؟')
+      if (!confirm(lines.join('\n'))) return
+
+      // المهام لا تُحذف تلقائياً مع الزيارة (قيدها مانع)، فنحذفها أولاً
+      // بعد أن رآها المستخدم صراحةً — لا حذف صامت لالتزام قائم
+      if (tasks.length) {
+        const { error: tErr } = await supabase.from('tasks').delete().eq('visit_id', v.id)
+        if (tErr) throw tErr
+      }
       const { error } = await supabase.from('site_visits').delete().eq('id', v.id)
       if (error) throw error
       await loadVisits(selectedProject.id)
-    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
+    } catch(e) { alert('تعذّر الحذف: ' + (e?.message ?? e)) }
   }
 
   const filteredProjects = projects.filter(p =>
@@ -226,6 +312,34 @@ export default function Visits() {
           <div className="modal">
             <h3>{editVisit ? 'Edit Visit' : 'New Site Visit'}</h3>
             <form onSubmit={handleSave}>
+              {/* ── الربط بالخطة ──
+                  سجلٌّ بلا أصل لا يُعرف أي مرحلة يوثّق، ولا يُنظَّف إذا
+                  تراجعت الزيارة أو حُذفت — وهو مصدر السجلات اليتيمة */}
+              <div className="form-group">
+                <label className="form-label">زيارة الخطة · Plan Visit *</label>
+                <select className="form-input" required
+                  value={form.project_visit_id || ''}
+                  onChange={e => pickPlanVisit(e.target.value)}>
+                  <option value="">اختر الزيارة…</option>
+                  {planVisits.map(pv => {
+                    const taken = visits.some(s => s.project_visit_id === pv.id && s.id !== editVisit?.id)
+                    return (
+                      <option key={pv.id} value={pv.id} disabled={taken}>
+                        {pv.is_rework ? '↳ ' : ''}{pv.title_ar || pv.title}
+                        {pv.is_rework ? ' (زيارة إضافية)' : ''}
+                        {taken ? ' — لها سجل بالفعل' : ''}
+                      </option>
+                    )
+                  })}
+                  <option value={OFF_PLAN}>— زيارة خارج الخطة (دورية أو استثنائية)</option>
+                </select>
+                <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.6}}>
+                  {form.project_visit_id === OFF_PLAN
+                    ? 'لن تُربط بأي مرحلة — اخترها للإشراف الشهري أو الزيارات الاستثنائية فقط.'
+                    : 'الربط يجعل السجل يُنظَّف تلقائياً عند التراجع عن الزيارة أو حذفها.'}
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="form-label">Engineer</label>
                 <EngineerSelect valueId={form.engineer_id} valueName={form.engineer_name}
@@ -462,7 +576,17 @@ export default function Visits() {
                       <tr key={v.id}>
                         <td style={{fontWeight:500}}>{v.visit_date}</td>
                         <td style={{color:'var(--text-muted)',fontSize:12}}>{v.engineer_name||'—'}</td>
-                        <td style={{color:'var(--text-muted)',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.notes||'—'}</td>
+                        <td style={{color:'var(--text-muted)',fontSize:12,maxWidth:220}}>
+                          <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.notes||'—'}</div>
+                          {/* سجلّ بلا أصل في الخطة — يظهر ليُعالَج لا ليُنسى */}
+                          {!v.project_visit_id && (
+                            <span title="غير مرتبط بزيارة في الخطة — لن يُنظَّف تلقائياً"
+                              style={{display:'inline-block',marginTop:3,background:'#FAEEDA',color:'#854F0B',
+                                      fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:10}}>
+                              خارج الخطة
+                            </span>
+                          )}
+                        </td>
                         <td><span className={`badge ${SEV_COLOR[v.severity]||'badge-gray'}`}>{v.severity}</span></td>
                         <td><span className={`badge ${v.status==='approved'?'badge-done':v.status==='submitted'?'badge-progress':'badge-gray'}`}>{v.status}</span></td>
                         <td><div style={{display:'flex',gap:6}}>
