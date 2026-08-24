@@ -200,19 +200,30 @@ export default function ProjectVisits() {
     try {
       const data = { ...form, project_id: selectedProject.id }
 
-      // نفس قاعدة شريط الإتمام — وإلا بقي هذا طريقاً ملتفّاً حولها
-      if (data.status === 'completed') {
+      // نفس قاعدة شريط الإتمام — وإلا بقي هذا طريقاً ملتفّاً حولها.
+      // والجدولة مثل الإنجاز: زيارة مجدولة بلا موعد لا تظهر في تذكير
+      // ولا في قائمة متأخرات، وهي أصل تراكم مئات الزيارات بلا تاريخ.
+      if (data.status === 'completed' || data.status === 'scheduled') {
         const missing = []
         if (!data.engineer_id)    missing.push('المهندس')
         if (!data.scheduled_date) missing.push('التاريخ')
         if (!data.scheduled_time) missing.push('الوقت')
         if (missing.length) {
-          alert('لا يمكن تعليم الزيارة «منجزة» بدون: ' + missing.join(' و'))
+          alert(`لا يمكن تعليم الزيارة «${STATUS_LABELS[data.status]}» بدون: ` + missing.join(' و'))
           setSaving(false)
           return
         }
       }
       const becameCompleted = data.status === 'completed' && editVisit?.status !== 'completed'
+      // الرجوع عن الإنجاز من النافذة كان يغيّر الحالة وحدها، فيبقى
+      // سجل زيارة الموقع قائماً ويُحسب زيارةً وقعت — نفس معالجة النقر
+      const leftCompleted = editVisit?.status === 'completed' && data.status !== 'completed'
+      if (leftCompleted) {
+        const label = STATUS_LABELS[data.status] || data.status
+        if (!confirm(`هذه الزيارة منجزة، وستعود «${label}».\nمتابعة؟`)) { setSaving(false); return }
+        if (!await cleanupOnRevert(editVisit.id)) { setSaving(false); return }
+      }
+
       if (editVisit) { const { error } = await supabase.from('project_visits').update(data).eq('id', editVisit.id); if (error) throw error }
       else { const { error } = await supabase.from('project_visits').insert(data); if (error) throw error }
       setShowModal(false)
@@ -227,10 +238,16 @@ export default function ProjectVisits() {
   async function handleDelete(v) {
     if (!confirm('Delete this visit?')) return
     try {
+      // الحذف كان يترك سجل زيارة الموقع معلّقاً بلا صفّ خطة: المفتاح
+      // الأجنبي on delete set null يفكّ الرابط ولا يحذف السجل، فيبقى
+      // في «زيارات المواقع» بلا أصل — وهو ما وقع فعلاً لزيارة إضافية
+      // حُذفت وبقي سجلّها باثني عشر بند فحص.
+      if (!await cleanupOnRevert(v.id)) return
+
       const { error } = await supabase.from('project_visits').delete().eq('id', v.id)
       if (error) throw error
       await loadVisits(selectedProject.id)
-    } catch(e) { alert('تعذّر الحفظ: ' + e.message) }
+    } catch(e) { alert('تعذّر الحذف: ' + e.message) }
   }
 
   // إنجاز الزيارة: يُنشئ سجل زيارة الموقع ثم يعرض الانتقال لكتابة
@@ -311,36 +328,46 @@ export default function ProjectVisits() {
     }
   }
 
+  // ── التراجع عن الإنجاز ───────────────────────────────────────────
+  //  سجل زيارة الموقع أُنشئ عند الإنجاز — تركه بعد التراجع يعني ظهور
+  //  زيارة في السجل لم تحدث رسمياً.
+  //
+  //  مشتركة بين النقر على الحالة ونافذة التعديل: كانت النافذة تغيّر
+  //  الحالة وحدها بلا أثر، فتعود الزيارة «معلّقة» ويبقى سجلّها قائماً
+  //  في زيارات المواقع — طريقٌ ملتفٌّ حول كل الضوابط.
+  //
+  //  ترجع false إن ألغى المستخدم، فيتوقف التراجع كلّه.
+  async function cleanupOnRevert(visitId) {
+    const { data: sv } = await supabase.from('site_visits')
+      .select('id').eq('project_visit_id', visitId).maybeSingle()
+    if (!sv?.id) return true
+
+    const [cl, rp, ph] = await Promise.all([
+      supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+      supabase.from('reports').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+      supabase.from('visit_photos').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+    ])
+    const attached = (cl.count||0) + (rp.count||0) + (ph.count||0)
+
+    if (attached === 0) {
+      if (confirm('لهذه الزيارة سجل في «زيارات المواقع» وهو فارغ.\nهل تحذفه أيضاً؟')) {
+        const { error: dErr } = await supabase.from('site_visits').delete().eq('id', sv.id)
+        if (dErr) throw dErr
+      }
+    } else {
+      alert('تنبيه: سجل زيارة الموقع المرتبط يحتوي بيانات ' +
+            `(${cl.count||0} بند فحص · ${rp.count||0} تقرير · ${ph.count||0} صورة)، ` +
+            'فلن يُحذف تلقائياً. احذفه يدوياً من شاشة زيارات المواقع إن أردت.')
+    }
+    return true
+  }
+
   async function toggleStatus(v) {
     try {
       // الرجوع من «منجزة» يمسح الإنجاز — لا يصح أن يقع بنقرة عابرة
       if (v.status === 'completed') {
         if (!confirm('هذه الزيارة منجزة.\nستعود «معلّقة» ويُمسح موعدها (يبقى المهندس).\nمتابعة؟')) return
-
-        // سجل زيارة الموقع أُنشئ عند الإنجاز — تركه بعد التراجع يعني
-        // ظهور زيارة في السجل لم تحدث رسمياً
-        const { data: sv } = await supabase.from('site_visits')
-          .select('id').eq('project_visit_id', v.id).maybeSingle()
-
-        if (sv?.id) {
-          const [cl, rp, ph] = await Promise.all([
-            supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
-            supabase.from('reports').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
-            supabase.from('visit_photos').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
-          ])
-          const attached = (cl.count||0) + (rp.count||0) + (ph.count||0)
-
-          if (attached === 0) {
-            if (confirm('لهذه الزيارة سجل في «زيارات المواقع» وهو فارغ.\nهل تحذفه أيضاً؟')) {
-              const { error: dErr } = await supabase.from('site_visits').delete().eq('id', sv.id)
-              if (dErr) throw dErr
-            }
-          } else {
-            alert('تنبيه: سجل زيارة الموقع المرتبط يحتوي بيانات ' +
-                  `(${cl.count||0} بند فحص · ${rp.count||0} تقرير · ${ph.count||0} صورة)، ` +
-                  'فلن يُحذف تلقائياً. احذفه يدوياً من شاشة زيارات المواقع إن أردت.')
-          }
-        }
+        if (!await cleanupOnRevert(v.id)) return
       }
 
       const nextStatus = STATUS_NEXT[v.status]
