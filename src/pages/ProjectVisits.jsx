@@ -244,7 +244,40 @@ export default function ProjectVisits() {
           return
         }
       }
+      // ── تحذير التسلسل ──
+      //  الشريط يعرض الزيارات السابقة غير المنجزة ويُلزم بذكر سبب تخطّي
+      //  كل واحدة. النافذة كانت تتخطّاها بلا كلمة، فبقيت طريقاً ملتفّاً
+      //  حول القاعدة. لا نُكرّر المنطق هنا — نُحوّل إلى الشريط نفسه،
+      //  فمصدر الحكم واحد ولا يفترق التطبيقان بعد أول تعديل.
       const becameCompleted = data.status === 'completed' && editVisit?.status !== 'completed'
+      if (becameCompleted && editVisit) {
+        const earlier = visits.filter(x =>
+          !x.is_rework && x.id !== editVisit.id &&
+          (x.order_index ?? 0) < (editVisit.order_index ?? 0) &&
+          !['completed','cancelled','not_applicable'].includes(x.status))
+
+        if (earlier.length) {
+          // نحفظ بقية الحقول ونُبقي الحالة كما هي، ثم نفتح الشريط
+          const { status, ...rest } = data
+          const { error } = await supabase.from('project_visits').update(rest).eq('id', editVisit.id)
+          if (error) throw error
+          setShowModal(false)
+          await loadVisits(selectedProject.id)
+
+          setCForm({
+            engineer_id: data.engineer_id || null,
+            engineer_name: data.engineer_name || '',
+            scheduled_date: data.scheduled_date || localToday(),
+            scheduled_time: (data.scheduled_time || '09:00').slice(0,5),
+          })
+          setCErr(''); setCTarget('completed')
+          setBlockers(earlier)
+          setBDisp(Object.fromEntries(earlier.map(x => [x.id, { mode:'keep', reason:'' }])))
+          setCompleting(editVisit.id)
+          setSaving(false)
+          return
+        }
+      }
       // الرجوع عن الإنجاز من النافذة كان يغيّر الحالة وحدها، فيبقى
       // سجل زيارة الموقع قائماً ويُحسب زيارةً وقعت — نفس معالجة النقر
       const leftCompleted = editVisit?.status === 'completed' && data.status !== 'completed'
