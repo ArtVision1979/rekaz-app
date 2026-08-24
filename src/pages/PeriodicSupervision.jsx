@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
 import { useNavigate } from 'react-router-dom'
+import { fmtFee } from '../lib/rework.js'
 
 // ─────────────────────────────────────────────────────────────────────
 //  الإشراف الدوري — النوع الثاني
@@ -166,7 +167,7 @@ export default function PeriodicSupervision() {
                             <span style={{color:'#A32D2D',fontWeight:700}}>
                               {m.extra_visits}
                               {m.visit_fee
-                                ? ` · ${Number(m.extra_due).toFixed(3)} د.ب`
+                                ? ` · ${fmtFee(m.extra_due)} د.ب`
                                 : ' · حدّد أجر الزيارة'}
                             </span>
                           ) : (

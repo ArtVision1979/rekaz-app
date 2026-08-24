@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
 import ReworkPanel from '../components/ReworkPanel.jsx'
+import { fmtFee } from '../lib/rework.js'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
@@ -765,7 +766,7 @@ export default function ProjectVisits() {
                               {v.chargeable ? (
                                 <span style={{background:'#E1F5EE',color:'#0F6E56',fontSize:10.5,fontWeight:700,
                                               padding:'2px 7px',borderRadius:11}}>
-                                  {Number(v.fee).toFixed(3)} د.ب
+                                  {fmtFee(v.fee)} د.ب
                                 </span>
                               ) : (
                                 <span title={v.fee_waived_reason || ''}

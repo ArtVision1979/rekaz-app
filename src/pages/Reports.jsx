@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
-import { createRework, markDecision, saveProjectRate } from '../lib/rework.js'
+import { createRework, markDecision, saveProjectRate, fmtFee } from '../lib/rework.js'
 import { useSearchParams } from 'react-router-dom'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
@@ -74,34 +74,34 @@ function buildReworkHtml(rw) {
     ? new Date(rw.scheduled_date).toLocaleDateString('en-GB')
     : 'يُحدَّد لاحقاً'
   const amountCell = rw.chargeable
-    ? `<td style="padding:7px 12px;font-weight:700;color:#A32D2D;">${Number(rw.fee).toFixed(3)} د.ب · BHD</td>`
+    ? `<td dir="rtl" style="padding:7px 12px;font-weight:700;color:#A32D2D;">${fmtFee(rw.fee)} د.ب · BHD</td>`
     : `<td style="padding:7px 12px;color:#0F6E56;font-weight:600;">بلا رسوم · No charge${
         rw.fee_waived_reason ? ` — ${rw.fee_waived_reason}` : ''}</td>`
 
   return `
     <div style="background:#FFF5F5;border:1px solid #E8C4C4;border-radius:8px;padding:14px 18px;margin-bottom:14px;page-break-inside:avoid;break-inside:avoid;">
-      <div style="font-size:11px;font-weight:700;color:#A32D2D;text-transform:uppercase;margin-bottom:8px;">
+      <div dir="rtl" style="font-size:11px;font-weight:700;color:#A32D2D;text-transform:uppercase;margin-bottom:8px;text-align:right;">
         ⚠ زيارة إضافية مطلوبة · Additional Visit Required
       </div>
-      <div style="font-size:12.5px;line-height:1.7;margin-bottom:10px;">
+      <div dir="rtl" lang="ar" style="font-size:12.5px;line-height:1.7;margin-bottom:10px;text-align:right;">
         تمّت الزيارة وأُجري الفحص في التاريخ المذكور أعلاه، و<strong>لم تجتز
         المرحلة الفحص</strong>: وُجدت <strong>${rw.parent_fails || 0} ملاحظة</strong>
         غير مطابقة في «${stage}» (مبيّنة في قائمة الفحص أعلاه).
         يلزم على المقاول معالجتها، ثم <strong>زيارة أخرى للمهندس</strong>
         لإعادة الفحص — وهي زيارة خارج زيارات العقد.
       </div>
-      <div style="font-size:12px;line-height:1.7;margin-bottom:10px;background:#fff;border-radius:6px;padding:9px 12px;">
+      <div dir="rtl" lang="ar" style="font-size:12px;line-height:1.7;margin-bottom:10px;background:#fff;border-radius:6px;padding:9px 12px;text-align:right;">
         <strong>الرسوم تُدفع مسبقاً</strong> قبل تحديد موعد الزيارة.
-        <span style="color:#666;">· The fee is payable in advance before the visit is scheduled.</span>
+        <span dir="ltr" style="color:#666;">· The fee is payable in advance before the visit is scheduled.</span>
       </div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;">
+      <table dir="rtl" style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;text-align:right;">
         <tr style="background:#fafafa;">
           <td style="padding:7px 12px;font-weight:700;width:38%;">المرحلة · Stage</td>
-          <td style="padding:7px 12px;">${stage}</td>
+          <td dir="rtl" style="padding:7px 12px;">${stage}</td>
         </tr>
         <tr>
           <td style="padding:7px 12px;font-weight:700;">موعد الإعادة · Date</td>
-          <td style="padding:7px 12px;">${date}</td>
+          <td dir="ltr" style="padding:7px 12px;text-align:right;">${date}</td>
         </tr>
         <tr style="background:#fafafa;">
           <td style="padding:7px 12px;font-weight:700;">المبلغ · Amount</td>

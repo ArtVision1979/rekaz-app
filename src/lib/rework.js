@@ -13,7 +13,25 @@ export const localToday = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-export const fmtFee = n => Number(n).toFixed(3)
+// ─────────────────────────────────────────────────────────────────────
+//  صيغة المبلغ
+//
+//  الدينار البحريني ثلاث خانات عشرية (فلس)، فـ«50.000» في العرف المحلي
+//  خمسون ديناراً. لكنها تُقرأ خمسين ألفاً عند من يعتاد النقطة فاصلةَ
+//  آلاف — والتقرير يذهب إلى العميل، فاللبس فيه مكلف.
+//
+//  فإن لم تكن هناك فلوس نكتب «50» بلا أصفار، وإن كانت نكتب «37.500»،
+//  ومع فاصلة الآلاف «1,250.000» فلا يبقى احتمال للالتباس.
+// ─────────────────────────────────────────────────────────────────────
+export const fmtFee = n => {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return '—'
+  const whole = Number.isInteger(v)
+  return v.toLocaleString('en-US', {
+    minimumFractionDigits: whole ? 0 : 3,
+    maximumFractionDigits: 3
+  })
+}
 
 /**
  * إنشاء زيارة إعادة على نفس المرحلة.
