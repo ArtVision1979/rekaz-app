@@ -342,22 +342,39 @@ export default function ProjectVisits() {
       .select('id').eq('project_visit_id', visitId).maybeSingle()
     if (!sv?.id) return true
 
-    const [cl, rp, ph] = await Promise.all([
+    const [cl, rp, ph, tk] = await Promise.all([
       supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
       supabase.from('reports').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
       supabase.from('visit_photos').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
+      supabase.from('tasks').select('id',{count:'exact',head:true}).eq('visit_id', sv.id),
     ])
     const attached = (cl.count||0) + (rp.count||0) + (ph.count||0)
 
     if (attached === 0) {
       if (confirm('لهذه الزيارة سجل في «زيارات المواقع» وهو فارغ.\nهل تحذفه أيضاً؟')) {
+        // المهام قيدها يمنع حذف الزيارة، فتُحذف أولاً — والسجل فارغ
+        // من الفحص والتقارير أصلاً، فما بقي إلا مهام بلا مصدر
+        if (tk.count) {
+          const { error: tErr } = await supabase.from('tasks').delete().eq('visit_id', sv.id)
+          if (tErr) throw tErr
+        }
         const { error: dErr } = await supabase.from('site_visits').delete().eq('id', sv.id)
         if (dErr) throw dErr
       }
     } else {
-      alert('تنبيه: سجل زيارة الموقع المرتبط يحتوي بيانات ' +
-            `(${cl.count||0} بند فحص · ${rp.count||0} تقرير · ${ph.count||0} صورة)، ` +
-            'فلن يُحذف تلقائياً. احذفه يدوياً من شاشة زيارات المواقع إن أردت.')
+      // التحذير وحده لم يكن كافياً: كان التراجع يمضي فتصير الخطة تقول
+      // «لم تُنجَز» والسجلّ يقول «تمّت وصدر تقريرها» — وتقرير صادر
+      // للعميل معلّق بزيارة تنكر الخطةُ وقوعها. فالمنع أصحّ من التنبيه.
+      alert('لا يمكن التراجع عن هذه الزيارة.\n\n' +
+            'لها سجل في «زيارات المواقع» يحتوي: ' +
+            [cl.count ? `${cl.count} بند فحص` : null,
+             rp.count ? `${rp.count} تقرير صادر` : null,
+             ph.count ? `${ph.count} صورة` : null,
+             tk.count ? `${tk.count} مهمة` : null].filter(Boolean).join(' · ') +
+            '.\n\nالزيارة وقعت فعلاً وصدر عنها عمل موثّق. إن كنت تريد ' +
+            'التراجع حقاً، احذف السجل أولاً من شاشة «زيارات المواقع» — ' +
+            'وستُعرض عليك هناك قائمة بما سيُحذف قبل التأكيد.')
+      return false
     }
     return true
   }
@@ -475,8 +492,14 @@ export default function ProjectVisits() {
     (p.project_no||'').toLowerCase().includes(projectSearch.toLowerCase())
   )
 
-  const completed = visits.filter(v => v.status === 'completed').length
-  const total = visits.length
+  // العدّاد يقيس العقد، فالزيارات الإضافية خارجه — وإلا ظهر مشروع
+  // الـ ٢٢ زيارة وكأنه ٢٣، وهو ما لم يتعاقد عليه العميل. نفس قاعدة
+  // نسبة الإنجاز في قاعدة البيانات، فلا يتناقض الرقمان.
+  const contractVisits = visits.filter(v => !v.is_rework)
+  const extraVisits    = visits.filter(v => v.is_rework)
+  const completed = contractVisits.filter(v => v.status === 'completed').length
+  const total     = contractVisits.length
+  const extraDone = extraVisits.filter(v => v.status === 'completed').length
   const progress = total > 0 ? Math.round((completed / total) * 100) : 0
 
   return (
@@ -513,10 +536,19 @@ export default function ProjectVisits() {
               <tbody>
                 {visits.map((v,i) => (
                   <tr key={v.id} style={{background:i%2===0?'#fafafa':'white'}}>
-                    <td style={{padding:'6px 10px',color:'#888'}}>{i+1}</td>
+                    {/* الترقيم يتبع العقد: الإعادة لا تأخذ رقم مرحلة
+                        وإلا صار المشروع ٢٣ زيارة في ورقة تصل العميل */}
+                    <td style={{padding:'6px 10px',color:'#888'}}>
+                      {v.is_rework ? '↳' : contractVisits.indexOf(v) + 1}
+                    </td>
                     <td style={{padding:'6px 10px'}}>
                       <div style={{fontWeight:500}}>{v.title}</div>
                       {v.title_ar && <div style={{fontSize:11,color:'#666'}}>{v.title_ar}</div>}
+                      {v.is_rework && (
+                        <div style={{fontSize:10,color:'#A32D2D',fontWeight:700,marginTop:2}}>
+                          زيارة إضافية{v.chargeable ? ` · ${fmtFee(v.fee)} د.ب` : ' · بلا رسوم'}
+                        </div>
+                      )}
                     </td>
                     <td style={{padding:'6px 10px',color:'#666'}}>{v.engineer_name||'—'}</td>
                     <td style={{padding:'6px 10px',color:'#666'}}>{v.scheduled_date||'—'}</td>
@@ -742,7 +774,12 @@ export default function ProjectVisits() {
               <div style={{display:'flex',alignItems:'center',gap:12}}>
                 <div style={{textAlign:'center'}}>
                   <div style={{fontSize:22,fontWeight:500,color:'#185FA5'}}>{completed}/{total}</div>
-                  <div style={{fontSize:11,color:'var(--text-muted)'}}>Completed</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)'}}>زيارات العقد</div>
+                  {extraVisits.length > 0 && (
+                    <div style={{fontSize:11,color:'#A32D2D',fontWeight:700,marginTop:3}}>
+                      + {extraDone}/{extraVisits.length} إضافية
+                    </div>
+                  )}
                 </div>
                 <div style={{width:70}}>
                   <div className="progress-bar" style={{height:6}}><div className="progress-fill" style={{width:`${progress}%`}}/></div>
@@ -781,7 +818,7 @@ export default function ProjectVisits() {
                       <tr style={{opacity:v.status==='cancelled'?0.5:1,
                                   background: v.is_rework ? 'rgba(163,45,45,.045)' : undefined}}>
                         <td style={{color:'var(--text-muted)',fontSize:11}}>
-                          {v.is_rework ? '↳' : i+1}
+                          {v.is_rework ? '↳' : contractVisits.indexOf(v) + 1}
                         </td>
                         <td>
                           <div style={{fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
