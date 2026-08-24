@@ -144,8 +144,37 @@ export default function ProjectVisits() {
     } catch(e) { alert('Error: ' + e.message) } finally { setSaving(false) }
   }
 
+  // ── حارس العمليات الجماعية ────────────────────────────────────────
+  //  Reset و Delete All كانا يمسحان كل زيارات المشروع بسطر تأكيد واحد.
+  //  والمفتاح الأجنبي on delete set null لا يحذف سجلات زيارات المواقع
+  //  بل يفكّ روابطها — فيصير كل سجلّات المشروع يتيمة دفعةً واحدة،
+  //  ومعها تقارير صادرة بلا زيارة تنتمي إليها. نفس قاعدة الزيارة
+  //  الواحدة: ما له عمل موثّق لا يُمسح من هنا.
+  async function projectHasRecords(action) {
+    const { data: sv } = await supabase.from('site_visits')
+      .select('id').eq('project_id', selectedProject.id)
+    const ids = (sv || []).map(x => x.id)
+    if (!ids.length) return false
+
+    const [rp, cl, tk] = await Promise.all([
+      supabase.from('reports').select('report_no').in('visit_id', ids),
+      supabase.from('visit_checklist_results').select('id',{count:'exact',head:true}).in('visit_id', ids),
+      supabase.from('tasks').select('id',{count:'exact',head:true}).in('visit_id', ids),
+    ])
+    const reports = rp.data || []
+    alert(`لا يمكن ${action}.\n\n` +
+          `لهذا المشروع ${ids.length} سجل زيارة في «زيارات المواقع» يحتوي: ` +
+          [cl.count ? `${cl.count} بند فحص` : null,
+           reports.length ? `${reports.length} تقرير صادر (${reports.map(r=>r.report_no).join('، ')})` : null,
+           tk.count ? `${tk.count} مهمة` : null].filter(Boolean).join(' · ') +
+          '.\n\nهذه زيارات وقعت فعلاً. احذف سجلّاتها أولاً من شاشة ' +
+          '«زيارات المواقع» — واحدةً واحدة ومع بيان ما سيُحذف.')
+    return true
+  }
+
   async function resetToDefault() {
     if (!selectedProject) return
+    if (await projectHasRecords('إعادة ضبط زيارات المشروع')) return
     if (!confirm('Delete all current visits and reload defaults?')) return
     setSaving(true)
     try {
@@ -168,6 +197,7 @@ export default function ProjectVisits() {
 
   async function deleteAllVisits() {
     if (!selectedProject) return
+    if (await projectHasRecords('حذف كل زيارات المشروع')) return
     if (!confirm('Delete ALL visits?')) return
     try {
       const { error } = await supabase.from('project_visits').delete().eq('project_id', selectedProject.id)
