@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjects, supabase, removeStorageFile } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
+import { createRework, markDecision, saveProjectRate } from '../lib/rework.js'
 import { useSearchParams } from 'react-router-dom'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
@@ -83,9 +84,15 @@ function buildReworkHtml(rw) {
         ⚠ زيارة إضافية مطلوبة · Additional Visit Required
       </div>
       <div style="font-size:12.5px;line-height:1.7;margin-bottom:10px;">
-        تمّت الزيارة وأُجري الفحص، ووُجدت <strong>${rw.parent_fails || 0} ملاحظة</strong>
-        لم تُجتَز في مرحلة «${stage}». يلزم إعادة الفحص بعد المعالجة، وهي
-        زيارة خارج زيارات العقد.
+        تمّت الزيارة وأُجري الفحص في التاريخ المذكور أعلاه، و<strong>لم تجتز
+        المرحلة الفحص</strong>: وُجدت <strong>${rw.parent_fails || 0} ملاحظة</strong>
+        غير مطابقة في «${stage}» (مبيّنة في قائمة الفحص أعلاه).
+        يلزم على المقاول معالجتها، ثم <strong>زيارة أخرى للمهندس</strong>
+        لإعادة الفحص — وهي زيارة خارج زيارات العقد.
+      </div>
+      <div style="font-size:12px;line-height:1.7;margin-bottom:10px;background:#fff;border-radius:6px;padding:9px 12px;">
+        <strong>الرسوم تُدفع مسبقاً</strong> قبل تحديد موعد الزيارة.
+        <span style="color:#666;">· The fee is payable in advance before the visit is scheduled.</span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;">
         <tr style="background:#fafafa;">
@@ -109,6 +116,12 @@ export function Reports() {
   const [existingReport, setExistingReport] = useState(null)
   // الزيارة الإضافية المرتبطة بمرحلة هذه الزيارة — تظهر بنداً في التقرير
   const [rework, setRework] = useState(null)
+  const [parentVisit, setParentVisit] = useState(null)   // صفّ الخطة
+  const [askRework, setAskRework] = useState(false)      // نافذة السؤال
+  const [askedRework, setAskedRework] = useState(false)  // سُئل في هذه الجلسة
+  const [rwFee, setRwFee] = useState('')
+  const [rwNote, setRwNote] = useState('')
+  const [rwErr, setRwErr] = useState('')
   const [sending, setSending] = useState('')
   const { user: me } = useCurrentUser()
 
@@ -264,6 +277,14 @@ export function Reports() {
         : Promise.resolve({ data: null })
     ])
     setRework(rw || null)
+    setAskedRework(false); setRwNote(''); setRwErr('')
+
+    // صفّ الخطة نفسه — عليه قرار الإعادة، ومنه أجر المشروع
+    if (visit.project_visit_id) {
+      const { data: pv } = await supabase.from('project_visits')
+        .select('*').eq('id', visit.project_visit_id).maybeSingle()
+      setParentVisit(pv || null)
+    } else setParentVisit(null)
     setChecklist(clData || [])
     setNotes(visit.notes || '')
     const resultsMap = {}
@@ -299,8 +320,56 @@ export function Reports() {
   }
 
   // ── Single visit report ──────────────────────────────────────────────
-  async function generateReport() {
+  // ── قرار الإعادة قبل إصدار التقرير ────────────────────────────────
+  // لحظة إصدار التقرير هي لحظة الحكم على الزيارة، فهي أنسب موضع
+  // للسؤال — والتقرير نفسه هو ما يُبلَّغ به العميل.
+  const failNow = Object.values(checklistResults).filter(r => r.result === 'fail').length
+  const needsDecision = failNow > 0 && !rework && parentVisit
+    && parentVisit.rework_decision !== 'not_needed'
+
+  // «نعم» — تُنشأ زيارة إعادة بأجر ويُدرج بندها في التقرير
+  async function reworkYes() {
+    const fee = parseFloat(rwFee)
+    if (!(fee > 0)) { setRwErr('أدخل أجر الزيارة الإضافية.'); return }
+    setRwErr(''); setSaving(true)
+    try {
+      await createRework(parentVisit, { fee, chargeable: true, fails: failNow })
+      if (selectedProject?.visit_fee == null) await saveProjectRate(selectedProject.id, fee)
+      const { data: rw } = await supabase.from('project_extra_visits')
+        .select('*').eq('parent_visit_id', parentVisit.id).maybeSingle()
+      setRework(rw || null)
+      setAskRework(false); setAskedRework(true)
+      setSaving(false)
+      await generateReport(rw || null)
+    } catch (e) {
+      setSaving(false); setRwErr(e?.message ?? String(e))
+    }
+  }
+
+  // «لا» — يُسجَّل القرار بسببه، ويصدر التقرير بلا بند إعادة
+  async function reworkNo() {
+    if (!rwNote.trim()) { setRwErr('اذكر سبب عدم لزوم الإعادة.'); return }
+    setRwErr(''); setSaving(true)
+    try {
+      await markDecision(parentVisit.id, 'not_needed', rwNote)
+      setParentVisit(p => ({ ...p, rework_decision:'not_needed', rework_decision_note: rwNote }))
+      setAskRework(false); setAskedRework(true)
+      setSaving(false)
+      await generateReport(null)
+    } catch (e) {
+      setSaving(false); setRwErr('تعذّر الحفظ: ' + (e?.message ?? e))
+    }
+  }
+
+  // القرار يُمرَّر صراحةً لا عبر الحالة: بعد إنشاء الإعادة مباشرة لم
+  // تكن الحالة قد تحدّثت بعد، فيصدر التقرير بلا البند
+  async function generateReport(rwOverride) {
     if (!selectedVisit || !selectedProject) return
+    if (needsDecision && !askedRework) {
+      setRwFee(selectedProject?.visit_fee != null ? String(selectedProject.visit_fee) : '')
+      setRwErr(''); setAskRework(true); return
+    }
+    const rw = rwOverride !== undefined ? rwOverride : rework
     // تنبيه إذا في نقاط لم تُحدد
     const pendingCount = checklist.filter(i => !checklistResults[i.id] || checklistResults[i.id].result === 'pending').length
     if (pendingCount > 0) {
@@ -323,7 +392,7 @@ export function Reports() {
           ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
         </div>`).join('')
       const checklistHtml = buildChecklistHtml(checklist, checklistResults)
-      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, photoHtml, photos })
+      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, photoHtml, photos, rw })
 
       // أرشفة نسخة ثابتة من التقرير في التخزين وربطها بالسجل، حتى
       // يمكن فتح التقرير لاحقاً كما صدر. سابقاً كان عمود pdf_path
@@ -552,7 +621,7 @@ export function Reports() {
     } catch(e) { alert('Error: ' + e.message) } finally { setGeneratingFull(false) }
   }
 
-  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, photoHtml, photos }) {
+  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, photoHtml, photos, rw }) {
     return `<!DOCTYPE html>
       <html><head><meta charset="UTF-8"><title>Site Visit Report - ${reportNo}</title>
       <style>* {box-sizing:border-box;margin:0;padding:0;} body {font-family:Arial,sans-serif;padding:36px;color:#111;font-size:13px;} .info-row {display:flex;flex-direction:column;gap:2px;margin-bottom:6px;} .info-label {font-size:10px;color:#888;text-transform:uppercase;} .info-value {font-size:13px;font-weight:500;} @media print {body {padding:20px;} .no-print {display:none !important;}}</style>
@@ -578,7 +647,7 @@ export function Reports() {
       </div>
       ${visit.notes?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div style="font-size:13px;line-height:1.6;">${visit.notes}</div></div>`:''}
       ${checklistHtml}
-      ${buildReworkHtml(rework)}
+      ${buildReworkHtml(rw)}
       ${photos.length>0?`<div style="margin-bottom:20px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">${photoHtml}</div></div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
         <div style="text-align:center;"><div style="border-top:1.5px solid #333;padding-top:8px;margin-top:48px;font-size:12px;">المهندس المشرف · Engineer<div style="font-size:11px;color:#888;margin-top:3px;">${project.engineer_name||'—'}</div></div></div>
@@ -819,6 +888,73 @@ export function Reports() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── قرار الإعادة قبل إصدار التقرير ── */}
+      {askRework && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setAskRework(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <h3 style={{color:'#A32D2D'}}>هل يحتاج الموقع زيارة إعادة؟</h3>
+
+            <div style={{background:'#FCEBEB',border:'1px solid rgba(163,45,45,.25)',
+                         borderRadius:7,padding:'10px 12px',fontSize:12.5,
+                         lineHeight:1.7,marginBottom:14}}>
+              هذه الزيارة فيها <strong>{failNow} ملاحظة</strong> لم تُجتَز
+              في مرحلة «{parentVisit?.title_ar || parentVisit?.title || '—'}».
+              قرارك يُدرَج في التقرير الذي يصل العميل.
+            </div>
+
+            {rwErr && (
+              <div style={{background:'#FCEBEB',color:'#A32D2D',padding:'8px 11px',
+                           borderRadius:6,fontSize:12,marginBottom:12,fontWeight:600}}>{rwErr}</div>
+            )}
+
+            {/* نعم */}
+            <div style={{border:'1.5px solid #A32D2D',borderRadius:8,padding:'12px 13px',marginBottom:11}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#A32D2D',marginBottom:8}}>
+                نعم — تلزم زيارة إضافية بأجر
+              </div>
+              <div style={{display:'flex',gap:9,alignItems:'flex-end',flexWrap:'wrap'}}>
+                <div>
+                  <label style={{fontSize:11,color:'var(--text-muted)'}}>الأجر (د.ب)</label>
+                  <input type="number" step="0.001" min="0" className="form-input"
+                    style={{width:140,fontSize:12.5}} value={rwFee}
+                    placeholder="مثال: 37.500"
+                    onChange={e=>setRwFee(e.target.value)}/>
+                </div>
+                <button type="button" className="btn btn-sm btn-primary" disabled={saving}
+                  style={{fontSize:12.5}} onClick={reworkYes}>
+                  {saving ? '…' : 'أنشئ الزيارة وأصدر التقرير'}
+                </button>
+              </div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8,lineHeight:1.6}}>
+                يظهر في التقرير أن الزيارة تمّت ووُجدت ملاحظات، وأن إعادة الفحص
+                لازمة بهذا الأجر <strong>يُدفع مسبقاً</strong> قبل تحديد الموعد.
+              </div>
+            </div>
+
+            {/* لا */}
+            <div style={{border:'1px solid var(--border)',borderRadius:8,padding:'12px 13px'}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>لا — لا تلزم إعادة</div>
+              <input className="form-input" style={{width:'100%',fontSize:12.5}}
+                value={rwNote}
+                placeholder="السبب — مثلاً: عولجت في الموقع · تُراجَع في الزيارة التالية"
+                onChange={e=>setRwNote(e.target.value)}/>
+              <button type="button" className="btn btn-sm" disabled={saving}
+                style={{fontSize:12.5,marginTop:9}} onClick={reworkNo}>
+                {saving ? '…' : 'سجّل السبب وأصدر التقرير'}
+              </button>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:8,lineHeight:1.6}}>
+                يُسجَّل السبب باسمك وتاريخه، ولا يظهر في تقرير العميل.
+              </div>
+            </div>
+
+            <div style={{marginTop:14,textAlign:'left'}}>
+              <button type="button" className="btn btn-sm" disabled={saving}
+                onClick={()=>setAskRework(false)}>إلغاء</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -99,6 +99,16 @@ export default function ProjectVisits() {
 
   const currentSystem = systems.find(s => s.id === templateSystemId)
 
+  // التراجع عن «لا تلزم إعادة» — يعيد الشريط ويمحو القرار وسببه
+  async function reopenRework(v) {
+    const { error } = await supabase.from('project_visits').update({
+      rework_decision: null, rework_decision_at: null,
+      rework_decision_by: null, rework_decision_note: null
+    }).eq('id', v.id)
+    if (error) { alert('تعذّر التراجع: ' + error.message); return }
+    await loadVisits(selectedProject.id)
+  }
+
   async function loadVisits(projectId) {
     // الإعادة تحمل نفس order_index الأم، فترتيبها بـ is_rework بعدها
     // يضعها تحتها مباشرة بدل أن تسبقها عشوائياً
@@ -780,9 +790,11 @@ export default function ProjectVisits() {
                       </tr>
 
                       {/* ملاحظات لم تُجتَز على زيارة منجزة ⇒ تلزم إعادة.
-                          لا تُقترح على زيارة إضافية سبق أن أُنشئت لها واحدة */}
+                          لا تُقترح على زيارة سبق أن أُنشئت لها إعادة،
+                          ولا على زيارة قُرِّر أنها لا تحتاج واحدة */}
                       {v.status === 'completed' && fails[v.id]?.open_fails > 0 &&
-                       !visits.some(x => x.parent_visit_id === v.id) && (
+                       !visits.some(x => x.parent_visit_id === v.id) &&
+                       v.rework_decision !== 'not_needed' && (
                         <tr>
                           <td colSpan={7} style={{padding:'0 14px 10px'}}>
                             <ReworkPanel
@@ -791,6 +803,24 @@ export default function ProjectVisits() {
                               fails={fails[v.id].open_fails}
                               onCreated={() => loadVisits(selectedProject.id)}
                             />
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* قرار «لا تلزم إعادة» يبقى ظاهراً — الإعفاء يُراجَع */}
+                      {v.rework_decision === 'not_needed' && (
+                        <tr>
+                          <td colSpan={7} style={{padding:'0 14px 10px'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',
+                                         background:'#F4F4F4',border:'1px solid var(--border)',
+                                         borderRadius:7,padding:'7px 11px',fontSize:11.5}}>
+                              <span style={{fontWeight:700,color:'#5b5b5b'}}>لا تلزم إعادة</span>
+                              <span style={{color:'var(--text-muted)',flex:1,minWidth:150}}>
+                                {v.rework_decision_note || '—'}
+                              </span>
+                              <button type="button" className="btn btn-sm" style={{fontSize:11}}
+                                onClick={()=>reopenRework(v)}>تراجع</button>
+                            </div>
                           </td>
                         </tr>
                       )}
