@@ -79,7 +79,7 @@ function buildReworkHtml(rw) {
         rw.fee_waived_reason ? ` — ${rw.fee_waived_reason}` : ''}</td>`
 
   return `
-    <div style="background:#FFF5F5;border:1px solid #E8C4C4;border-radius:8px;padding:14px 18px;margin-bottom:14px;">
+    <div style="background:#FFF5F5;border:1px solid #E8C4C4;border-radius:8px;padding:14px 18px;margin-bottom:14px;page-break-inside:avoid;break-inside:avoid;">
       <div style="font-size:11px;font-weight:700;color:#A32D2D;text-transform:uppercase;margin-bottom:8px;">
         ⚠ زيارة إضافية مطلوبة · Additional Visit Required
       </div>
@@ -362,14 +362,20 @@ export function Reports() {
   }
 
   // القرار يُمرَّر صراحةً لا عبر الحالة: بعد إنشاء الإعادة مباشرة لم
-  // تكن الحالة قد تحدّثت بعد، فيصدر التقرير بلا البند
-  async function generateReport(rwOverride) {
+  // تكن الحالة قد تحدّثت بعد، فيصدر التقرير بلا البند.
+  //
+  // الحارس أدناه ليس تزيّداً: حين كان الزر مربوطاً onClick={generateReport}
+  // مرّر React حدث النقر في موضع هذا الوسيط، وكائن الحدث ليس فيه أيٌّ من
+  // الحقول، فطُبع البند بـ«٠ ملاحظة» ومرحلة فارغة و«بلا رسوم».
+  const isEvent = x => !!x && typeof x === 'object' && ('nativeEvent' in x || 'preventDefault' in x)
+
+  async function generateReport(rwArg) {
     if (!selectedVisit || !selectedProject) return
     if (needsDecision && !askedRework) {
       setRwFee(selectedProject?.visit_fee != null ? String(selectedProject.visit_fee) : '')
       setRwErr(''); setAskRework(true); return
     }
-    const rw = rwOverride !== undefined ? rwOverride : rework
+    const rw = (rwArg === undefined || isEvent(rwArg)) ? rework : rwArg
     // تنبيه إذا في نقاط لم تُحدد
     const pendingCount = checklist.filter(i => !checklistResults[i.id] || checklistResults[i.id].result === 'pending').length
     if (pendingCount > 0) {
@@ -687,7 +693,7 @@ export function Reports() {
             </button>
           )}
           {selectedVisit && (
-            <button className="btn btn-primary" onClick={generateReport} disabled={saving}>
+            <button className="btn btn-primary" onClick={() => generateReport()} disabled={saving}>
               {saving ? 'Generating...' : existingReport ? '📄 إعادة إصدار التقرير' : '📄 Generate PDF Report'}
             </button>
           )}
