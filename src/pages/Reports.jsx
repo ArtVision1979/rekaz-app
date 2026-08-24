@@ -62,9 +62,53 @@ function buildChecklistHtml(cl, res) {
     </div>`
 }
 
+// ── بند الزيارة الإضافية في تقرير العميل ──────────────────────────────
+//  الغرض إثبات أن سبب الزيارة الزائدة هو ما لم يُجتَز في الموقع، لا
+//  ترتيب المكتب. فيُذكر أن الزيارة تمّت، وأن الملاحظات وُجدت، وأن
+//  إعادة الفحص لازمة — وبقيمتها المتفق عليها.
+function buildReworkHtml(rw) {
+  if (!rw) return ''
+  const stage  = rw.stage_title_ar || rw.stage_title || ''
+  const date   = rw.scheduled_date
+    ? new Date(rw.scheduled_date).toLocaleDateString('en-GB')
+    : 'يُحدَّد لاحقاً'
+  const amountCell = rw.chargeable
+    ? `<td style="padding:7px 12px;font-weight:700;color:#A32D2D;">${Number(rw.fee).toFixed(3)} د.ب · BHD</td>`
+    : `<td style="padding:7px 12px;color:#0F6E56;font-weight:600;">بلا رسوم · No charge${
+        rw.fee_waived_reason ? ` — ${rw.fee_waived_reason}` : ''}</td>`
+
+  return `
+    <div style="background:#FFF5F5;border:1px solid #E8C4C4;border-radius:8px;padding:14px 18px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:#A32D2D;text-transform:uppercase;margin-bottom:8px;">
+        ⚠ زيارة إضافية مطلوبة · Additional Visit Required
+      </div>
+      <div style="font-size:12.5px;line-height:1.7;margin-bottom:10px;">
+        تمّت الزيارة وأُجري الفحص، ووُجدت <strong>${rw.parent_fails || 0} ملاحظة</strong>
+        لم تُجتَز في مرحلة «${stage}». يلزم إعادة الفحص بعد المعالجة، وهي
+        زيارة خارج زيارات العقد.
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;">
+        <tr style="background:#fafafa;">
+          <td style="padding:7px 12px;font-weight:700;width:38%;">المرحلة · Stage</td>
+          <td style="padding:7px 12px;">${stage}</td>
+        </tr>
+        <tr>
+          <td style="padding:7px 12px;font-weight:700;">موعد الإعادة · Date</td>
+          <td style="padding:7px 12px;">${date}</td>
+        </tr>
+        <tr style="background:#fafafa;">
+          <td style="padding:7px 12px;font-weight:700;">المبلغ · Amount</td>
+          ${amountCell}
+        </tr>
+      </table>
+    </div>`
+}
+
 export function Reports() {
   // تقرير الزيارة المختارة وحالة تسليمه للعميل
   const [existingReport, setExistingReport] = useState(null)
+  // الزيارة الإضافية المرتبطة بمرحلة هذه الزيارة — تظهر بنداً في التقرير
+  const [rework, setRework] = useState(null)
   const [sending, setSending] = useState('')
   const { user: me } = useCurrentUser()
 
@@ -210,10 +254,16 @@ export function Reports() {
         types.find(t => shortType.toLowerCase().includes(t.split(' — ')[0]?.toLowerCase()))
       if (bestMatch) clData = allItems.filter(i => i.visit_type === bestMatch)
     }
-    const [{ data: results }, { data: ph }] = await Promise.all([
+    const [{ data: results }, { data: ph }, { data: rw }] = await Promise.all([
       supabase.from('visit_checklist_results').select('*').eq('visit_id', visit.id),
-      supabase.from('visit_photos').select('*').eq('visit_id', visit.id)
+      supabase.from('visit_photos').select('*').eq('visit_id', visit.id),
+      // الزيارة الإضافية المرتبطة بهذه المرحلة، إن أُنشئت
+      visit.project_visit_id
+        ? supabase.from('project_extra_visits').select('*')
+            .eq('parent_visit_id', visit.project_visit_id).maybeSingle()
+        : Promise.resolve({ data: null })
     ])
+    setRework(rw || null)
     setChecklist(clData || [])
     setNotes(visit.notes || '')
     const resultsMap = {}
@@ -528,6 +578,7 @@ export function Reports() {
       </div>
       ${visit.notes?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div style="font-size:13px;line-height:1.6;">${visit.notes}</div></div>`:''}
       ${checklistHtml}
+      ${buildReworkHtml(rework)}
       ${photos.length>0?`<div style="margin-bottom:20px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">${photoHtml}</div></div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
         <div style="text-align:center;"><div style="border-top:1.5px solid #333;padding-top:8px;margin-top:48px;font-size:12px;">المهندس المشرف · Engineer<div style="font-size:11px;color:#888;margin-top:3px;">${project.engineer_name||'—'}</div></div></div>

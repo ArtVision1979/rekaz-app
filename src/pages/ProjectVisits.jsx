@@ -2,6 +2,7 @@ import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
+import ReworkPanel from '../components/ReworkPanel.jsx'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
@@ -21,6 +22,8 @@ export default function ProjectVisits() {
   const [projects, setProjects] = useState([])
   const [selectedProject, setSelectedProject] = useState(null)
   const [visits, setVisits] = useState([])
+  // ملاحظات الرسوب لكل زيارة — أساس اقتراح الزيارة الإضافية
+  const [fails, setFails] = useState({})
   const [templates, setTemplates] = useState([])
   // نظام الإنشاء الذي تُعرض قوالبه وتُحرَّر (افتراضياً نظام المشروع المختار)
   const [templateSystemId, setTemplateSystemId] = useState('')
@@ -97,12 +100,17 @@ export default function ProjectVisits() {
   const currentSystem = systems.find(s => s.id === templateSystemId)
 
   async function loadVisits(projectId) {
-    const { data } = await supabase
-      .from('project_visits')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('order_index')
+    // الإعادة تحمل نفس order_index الأم، فترتيبها بـ is_rework بعدها
+    // يضعها تحتها مباشرة بدل أن تسبقها عشوائياً
+    const [{ data }, { data: f }] = await Promise.all([
+      supabase.from('project_visits').select('*')
+        .eq('project_id', projectId)
+        .order('order_index').order('is_rework').order('created_at'),
+      supabase.from('project_visit_fails').select('visit_id, fails, open_fails')
+        .eq('project_id', projectId)
+    ])
     setVisits(data || [])
+    setFails(Object.fromEntries((f || []).map(x => [x.visit_id, x])))
   }
 
   async function loadDefaultVisits() {
@@ -267,17 +275,19 @@ export default function ProjectVisits() {
     const visitDate = v.scheduled_date || today
     const label = v.title + (v.title_ar ? ' — ' + v.title_ar : '')
 
+    // الربط بالمعرّف لا بمطابقة (المشروع + التاريخ + نصّ الملاحظة):
+    // مع الزيارات الإضافية يتكرّر نفس النص على نفس المرحلة فتتصادم السجلات
     const { data: existing } = await supabase.from('site_visits')
-      .select('id').eq('project_id', v.project_id)
-      .eq('visit_date', visitDate).eq('notes', label).maybeSingle()
+      .select('id').eq('project_visit_id', v.id).maybeSingle()
 
     if (!existing) {
       const { error } = await supabase.from('site_visits').insert({
         project_id: v.project_id,
+        project_visit_id: v.id,
         visit_date: visitDate,
         engineer_id: v.engineer_id || null,
         engineer_name: v.engineer_name || '',
-        notes: label,
+        notes: label + (v.is_rework ? ' — زيارة إضافية' : ''),
         severity: 'low',
         status: 'submitted'
       })
@@ -298,10 +308,8 @@ export default function ProjectVisits() {
 
         // سجل زيارة الموقع أُنشئ عند الإنجاز — تركه بعد التراجع يعني
         // ظهور زيارة في السجل لم تحدث رسمياً
-        const label = v.title + (v.title_ar ? ' — ' + v.title_ar : '')
         const { data: sv } = await supabase.from('site_visits')
-          .select('id').eq('project_id', v.project_id)
-          .eq('visit_date', v.scheduled_date).eq('notes', label).maybeSingle()
+          .select('id').eq('project_visit_id', v.id).maybeSingle()
 
         if (sv?.id) {
           const [cl, rp, ph] = await Promise.all([
@@ -732,11 +740,30 @@ export default function ProjectVisits() {
                   <tbody>
                     {visits.map((v,i)=>(
                       <React.Fragment key={v.id}>
-                      <tr style={{opacity:v.status==='cancelled'?0.5:1}}>
-                        <td style={{color:'var(--text-muted)',fontSize:11}}>{i+1}</td>
+                      <tr style={{opacity:v.status==='cancelled'?0.5:1,
+                                  background: v.is_rework ? 'rgba(163,45,45,.045)' : undefined}}>
+                        <td style={{color:'var(--text-muted)',fontSize:11}}>
+                          {v.is_rework ? '↳' : i+1}
+                        </td>
                         <td>
                           <div style={{fontWeight:500,textDecoration:v.status==='completed'?'line-through':'none',color:v.status==='completed'?'var(--text-muted)':'var(--text)'}}>{v.title}</div>
                           {v.title_ar && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{v.title_ar}</div>}
+                          {v.is_rework && (
+                            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginTop:3}}>
+                              <span style={{background:'#A32D2D',color:'#fff',fontSize:10,fontWeight:700,
+                                            padding:'2px 7px',borderRadius:11}}>زيارة إضافية</span>
+                              {v.chargeable ? (
+                                <span style={{background:'#E1F5EE',color:'#0F6E56',fontSize:10.5,fontWeight:700,
+                                              padding:'2px 7px',borderRadius:11}}>
+                                  {Number(v.fee).toFixed(3)} د.ب
+                                </span>
+                              ) : (
+                                <span title={v.fee_waived_reason || ''}
+                                  style={{background:'#EFEFEF',color:'#5b5b5b',fontSize:10.5,fontWeight:700,
+                                          padding:'2px 7px',borderRadius:11}}>غير محسوبة</span>
+                              )}
+                            </div>
+                          )}
                           {v.notes && <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{v.notes}</div>}
                           {v.status==='not_applicable' && v.skip_reason && (
                             <div style={{fontSize:11,color:'#854F0B',marginTop:2}}>↳ {v.skip_reason}</div>
@@ -751,6 +778,22 @@ export default function ProjectVisits() {
                           <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={()=>handleDelete(v)}>Delete</button>
                         </div></td>
                       </tr>
+
+                      {/* ملاحظات لم تُجتَز على زيارة منجزة ⇒ تلزم إعادة.
+                          لا تُقترح على زيارة إضافية سبق أن أُنشئت لها واحدة */}
+                      {v.status === 'completed' && fails[v.id]?.open_fails > 0 &&
+                       !visits.some(x => x.parent_visit_id === v.id) && (
+                        <tr>
+                          <td colSpan={7} style={{padding:'0 14px 10px'}}>
+                            <ReworkPanel
+                              visit={v}
+                              project={selectedProject}
+                              fails={fails[v.id].open_fails}
+                              onCreated={() => loadVisits(selectedProject.id)}
+                            />
+                          </td>
+                        </tr>
+                      )}
 
                       {/* شريط الإتمام — يستوفي المهندس والتاريخ والوقت قبل
                           تعليم الزيارة منجزة */}
