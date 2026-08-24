@@ -108,7 +108,8 @@ export default function PeriodicSupervision() {
           <p>لا توجد مشاريع بإشراف دوري بعد.</p>
           <p style={{fontSize:12,marginTop:8,color:'var(--text-muted)'}}>
             لإضافة مشروع: افتح <strong>المشاريع</strong> ← تعديل أو مشروع جديد ←
-            اختر <strong>«إشراف دوري شهري»</strong> في حقل نوع الإشراف، وحدّد عدد زيارات الشهر.
+            اختر من <strong>خطة الإشراف</strong> إحدى الخطتين الشهريتين
+            (زيارتان أو ثلاث في الأسبوع)، وحدّد أجر الزيارة الواحدة.
           </p>
         </div></div>
       ) : projects.map(pr => {
@@ -122,7 +123,9 @@ export default function PeriodicSupervision() {
                 <div style={{fontSize:15,fontWeight:600}}>{pr.name}</div>
                 <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>
                   {pr.project_no || '—'} · {pr.visits_per_month || 0} زيارة شهرياً
-                  {pr.supervision_months ? ` · مدة العقد ${pr.supervision_months} شهراً` : ''}
+                  {pr.supervision_months
+                    ? ` · مدة العقد ${pr.supervision_months} شهراً`
+                    : ' · عقد مفتوح'}
                   {pr.supervision_start ? ` · بدأ ${pr.supervision_start}` : ''}
                 </div>
               </div>
@@ -142,7 +145,8 @@ export default function PeriodicSupervision() {
             ) : (
               <table className="table">
                 <thead><tr>
-                  <th>الشهر</th><th>المطلوب</th><th>المنفّذ</th><th>الحالة</th><th></th>
+                  <th>الشهر</th><th>المطلوب</th><th>المنفّذ</th>
+                  <th>زيارات إضافية</th><th>الحالة</th><th></th>
                 </tr></thead>
                 <tbody>
                   {mine.map(m => {
@@ -154,6 +158,20 @@ export default function PeriodicSupervision() {
                         <td style={{fontWeight:700,
                              color: short ? (m.is_current_month ? '#854F0B' : '#A32D2D') : '#0F6E56'}}>
                           {m.actual_visits}
+                        </td>
+                        {/* الزيارات داخل العدد المتعاقد عليه مدفوعة سلفاً،
+                            فالمحتسَب هو ما زاد وحده */}
+                        <td>
+                          {m.extra_visits > 0 ? (
+                            <span style={{color:'#A32D2D',fontWeight:700}}>
+                              {m.extra_visits}
+                              {m.visit_fee
+                                ? ` · ${Number(m.extra_due).toFixed(3)} د.ب`
+                                : ' · حدّد أجر الزيارة'}
+                            </span>
+                          ) : (
+                            <span style={{color:'var(--text-muted)'}}>—</span>
+                          )}
                         </td>
                         <td>
                           {m.is_closed ? (

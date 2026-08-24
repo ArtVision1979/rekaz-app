@@ -3,7 +3,24 @@ import { getProjects, createProject, supabase } from '../lib/supabase.js'
 import { useConstructionSystems } from '../hooks/useConstructionSystems.js'
 
 const STATUS_COLORS = { active:'badge-progress', completed:'badge-done', on_hold:'badge-gray', cancelled:'badge-open' }
-const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', client_email:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', supervision_type:'stage', visits_per_month:'', supervision_months:'', status:'active', progress:0 }
+const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phone:'', client_email:'', engineer_name:'', engineer_phone:'', contractor_name:'', contractor_phone:'', supervision_start:'', category_id:'', supervision_type:'stage', supervision_plan:'stage_16', visits_per_week:'', visits_per_month:'', supervision_months:'', visit_fee:'', status:'active', progress:0 }
+
+// ─────────────────────────────────────────────────────────────────────
+//  خطط الإشراف الخمس
+//
+//  كان النموذج يسأل عن «النوع» ثم عن الأعداد يدوياً، فأمكن حفظ مشروع
+//  دوري بلا عدد زيارات، أو مرحلي بعدد لا يطابق خطته. الخطة الواحدة
+//  تشتقّ النوع والأعداد معاً فلا يتناقضان.
+//
+//  الشهر ٤٫٣٥ أسبوع وسطياً — زيارتان أسبوعياً = ٩ شهرياً، وثلاث = ١٣.
+// ─────────────────────────────────────────────────────────────────────
+export const PLANS = {
+  stage_16: { type:'stage',    visits:16, label:'١٦ زيارة — إشراف بالمراحل' },
+  stage_12: { type:'stage',    visits:12, label:'١٢ زيارة — إشراف بالمراحل' },
+  stage_8:  { type:'stage',    visits:8,  label:'٨ زيارات — إشراف بالمراحل' },
+  weekly_2: { type:'periodic', perWeek:2, perMonth:9,  label:'شهري — زيارتان في الأسبوع' },
+  weekly_3: { type:'periodic', perWeek:3, perMonth:13, label:'شهري — ٣ زيارات في الأسبوع' },
+}
 
 export default function Projects() {
   const systems = useConstructionSystems()
@@ -48,8 +65,13 @@ export default function Projects() {
       contractor_name: p.contractor_name||'', contractor_phone: p.contractor_phone||'',
       supervision_start: p.supervision_start||'', category_id: p.category_id||'',
       supervision_type: p.supervision_type||'stage',
+      // مشروع قديم بلا خطة: نستنتجها من نوعه بدل أن نتركها فارغة
+      supervision_plan: p.supervision_plan
+        || (p.supervision_type === 'periodic' ? 'weekly_2' : 'stage_16'),
+      visits_per_week: p.visits_per_week ?? '',
       visits_per_month: p.visits_per_month ?? '',
       supervision_months: p.supervision_months ?? '',
+      visit_fee: p.visit_fee ?? '',
       status: p.status, progress: p.progress||0
     })
     setShowModal(true)
@@ -63,14 +85,20 @@ export default function Projects() {
       // القوائم والحقول الرقمية تُرجع '' عند الفراغ، وهي قيمة غير صالحة
       // لأعمدة uuid و integer — نحوّلها إلى null قبل الحفظ
       const num = v => (v === '' || v === null || v === undefined) ? null : Number(v)
-      const periodic = form.supervision_type === 'periodic'
+      // الخطة هي المصدر: النوع والأعداد تُشتقّ منها ولا تُدخل يدوياً
+      const plan     = PLANS[form.supervision_plan] || PLANS.stage_16
+      const periodic = plan.type === 'periodic'
       const payload = {
         ...form,
         category_id: form.category_id || null,
         supervision_start: form.supervision_start || null,
-        // حقول الإشراف الدوري لا معنى لها في إشراف المراحل
-        visits_per_month:   periodic ? num(form.visits_per_month)   : null,
+        supervision_type:   plan.type,
+        supervision_plan:   form.supervision_plan,
+        visits_per_week:    periodic ? plan.perWeek  : null,
+        visits_per_month:   periodic ? plan.perMonth : null,
+        // العقد المفتوح يُترك بلا مدة — النسبة حينها بلا معنى فلا تُحسب
         supervision_months: periodic ? num(form.supervision_months) : null,
+        visit_fee:          num(form.visit_fee),
       }
       if (editProject) { const { error } = await supabase.from('projects').update(payload).eq('id', editProject.id); if (error) throw error }
       else { await createProject(payload) }
@@ -457,35 +485,47 @@ export default function Projects() {
 
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                 <div className="form-group">
-                  <label className="form-label">نوع الإشراف · Supervision Type *</label>
+                  <label className="form-label">خطة الإشراف · Supervision Plan *</label>
                   {/* نموذجان مختلفان: المراحل = قائمة زيارات ثابتة بتسلسل
-                      إنشائي. الدوري = عدد متفق عليه من الزيارات شهرياً حتى
+                      إنشائي. الشهري = عدد متفق عليه من الزيارات أسبوعياً حتى
                       انتهاء المشروع، يُغلق كل شهر بإقرار المهندس. */}
-                  <select className="form-input" value={form.supervision_type||'stage'} required
-                    onChange={e=>setForm(f=>({...f,supervision_type:e.target.value}))}>
-                    <option value="stage">إشراف بالمراحل · Stage-based</option>
-                    <option value="periodic">إشراف دوري شهري · Periodic</option>
+                  <select className="form-input" value={form.supervision_plan||'stage_16'} required
+                    onChange={e=>setForm(f=>({...f,supervision_plan:e.target.value}))}>
+                    {Object.entries(PLANS).map(([k, p]) => (
+                      <option key={k} value={k}>{p.label}</option>
+                    ))}
                   </select>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.6}}>
+                    {PLANS[form.supervision_plan]?.type === 'periodic'
+                      ? `≈ ${PLANS[form.supervision_plan].perMonth} زيارة شهرياً. ما زاد عليها يُحتسب زيارة إضافية على العميل.`
+                      : `${PLANS[form.supervision_plan]?.visits ?? 16} زيارة مرحلية. أي إعادة على مرحلة تُحتسب زيارة إضافية.`}
+                  </div>
                 </div>
 
-                {form.supervision_type === 'periodic' && (
-                  <>
-                    <div className="form-group">
-                      <label className="form-label">زيارات الشهر المتفق عليها *</label>
-                      <input type="number" min="1" max="40" className="form-input" required
-                        value={form.visits_per_month}
-                        onChange={e=>setForm(f=>({...f,visits_per_month:e.target.value}))}
-                        placeholder="مثال: 8 (زيارتان أسبوعياً)"/>
+                {PLANS[form.supervision_plan]?.type === 'periodic' && (
+                  <div className="form-group">
+                    <label className="form-label">مدة العقد بالأشهر</label>
+                    <input type="number" min="1" max="120" className="form-input"
+                      value={form.supervision_months}
+                      onChange={e=>setForm(f=>({...f,supervision_months:e.target.value}))}
+                      placeholder="اتركه فارغاً للعقد المفتوح"/>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.6}}>
+                      العقد المفتوح بلا نسبة إنجاز — النسبة كسرٌ مقامه المدة،
+                      فيعرض البرنامج «إشراف مستمر» بدل رقم لا معنى له.
                     </div>
-                    <div className="form-group">
-                      <label className="form-label">مدة العقد بالأشهر</label>
-                      <input type="number" min="1" max="120" className="form-input"
-                        value={form.supervision_months}
-                        onChange={e=>setForm(f=>({...f,supervision_months:e.target.value}))}
-                        placeholder="تُستخدم لحساب نسبة التقدّم"/>
-                    </div>
-                  </>
+                  </div>
                 )}
+
+                <div className="form-group">
+                  <label className="form-label">أجر الزيارة الواحدة · د.ب</label>
+                  <input type="number" step="0.001" min="0" className="form-input"
+                    value={form.visit_fee}
+                    onChange={e=>setForm(f=>({...f,visit_fee:e.target.value}))}
+                    placeholder="مثال: 37.500"/>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4,lineHeight:1.6}}>
+                    أساس تسعير الزيارات الإضافية. من عرض السعر: الإشراف ÷ عدد الزيارات.
+                  </div>
+                </div>
 
                 <div className="form-group">
                   <label className="form-label">نظام الإنشاء · Construction System *</label>
