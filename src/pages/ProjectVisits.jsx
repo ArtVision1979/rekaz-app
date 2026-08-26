@@ -25,6 +25,8 @@ export default function ProjectVisits() {
   const [visits, setVisits] = useState([])
   // ملاحظات الرسوب لكل زيارة — أساس اقتراح الزيارة الإضافية
   const [fails, setFails] = useState({})
+  // المشروع الشهري لا خطة له — عدّاد العقد لا معنى له فيه
+  const [monthNow, setMonthNow] = useState(null)
   const [templates, setTemplates] = useState([])
   // نظام الإنشاء الذي تُعرض قوالبه وتُحرَّر (افتراضياً نظام المشروع المختار)
   const [templateSystemId, setTemplateSystemId] = useState('')
@@ -109,6 +111,17 @@ export default function ProjectVisits() {
     if (error) { alert('تعذّر التراجع: ' + error.message); return }
     await loadVisits(selectedProject.id)
   }
+
+  // حالة الشهر الجاري — بديل عدّاد العقد في المشاريع الشهرية
+  useEffect(() => {
+    if (selectedProject?.supervision_type !== 'periodic') { setMonthNow(null); return }
+    const now = new Date()
+    supabase.from('supervision_month_status').select('*')
+      .eq('project_id', selectedProject.id)
+      .eq('year', now.getFullYear()).eq('month', now.getMonth() + 1)
+      .maybeSingle()
+      .then(({ data }) => setMonthNow(data || null))
+  }, [selectedProject])
 
   async function loadVisits(projectId) {
     // الإعادة تحمل نفس order_index الأم، فترتيبها بـ is_rework بعدها
@@ -558,6 +571,8 @@ export default function ProjectVisits() {
   // العدّاد يقيس العقد، فالزيارات الإضافية خارجه — وإلا ظهر مشروع
   // الـ ٢٢ زيارة وكأنه ٢٣، وهو ما لم يتعاقد عليه العميل. نفس قاعدة
   // نسبة الإنجاز في قاعدة البيانات، فلا يتناقض الرقمان.
+  const isPeriodic = selectedProject?.supervision_type === 'periodic'
+  const monthShort = monthNow && monthNow.actual_visits < monthNow.required_visits
   const contractVisits = visits.filter(v => !v.is_rework)
   const extraVisits    = visits.filter(v => v.is_rework)
   const completed = contractVisits.filter(v => v.status === 'completed').length
@@ -834,36 +849,93 @@ export default function ProjectVisits() {
                   )}
                 </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:12}}>
-                <div style={{textAlign:'center'}}>
-                  <div style={{fontSize:22,fontWeight:500,color:'#185FA5'}}>{completed}/{total}</div>
-                  <div style={{fontSize:11,color:'var(--text-muted)'}}>زيارات العقد</div>
-                  {extraVisits.length > 0 && (
-                    <div style={{fontSize:11,color:'#A32D2D',fontWeight:700,marginTop:3}}>
-                      + {extraDone}/{extraVisits.length} إضافية
+              {/* المشروع الشهري لا خطة له: عقده «ن زيارة في الشهر» لا قائمة
+                  مراحل. فعدّاد العقد ونسبته رقمان بلا معنى فيه، ومكانهما
+                  حالة الشهر الجاري. */}
+              {isPeriodic ? (
+                <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:500,
+                                 color: monthShort ? '#854F0B' : '#0F6E56'}}>
+                      {monthNow ? `${monthNow.actual_visits}/${monthNow.required_visits}` : '—'}
                     </div>
-                  )}
+                    <div style={{fontSize:11,color:'var(--text-muted)'}}>زيارات هذا الشهر</div>
+                  </div>
+                  <div style={{fontSize:11.5,color:'var(--text-muted)',lineHeight:1.7,maxWidth:190}}>
+                    إشراف شهري
+                    {selectedProject.visits_per_week ? ` · ${selectedProject.visits_per_week} زيارة أسبوعياً` : ''}
+                    <br/>
+                    {selectedProject.supervision_months
+                      ? `مدة العقد ${selectedProject.supervision_months} شهراً`
+                      : 'عقد مفتوح — بلا نسبة إنجاز'}
+                  </div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}}
+                      onClick={()=>nav('/periodic-supervision')}>الإشراف الدوري</button>
+                    <button className="btn btn-sm btn-primary"
+                      onClick={()=>nav(`/periodic-visit?project=${selectedProject.id}`)}>
+                      + تسجيل زيارة دورية
+                    </button>
+                  </div>
                 </div>
-                <div style={{width:70}}>
-                  <div className="progress-bar" style={{height:6}}><div className="progress-fill" style={{width:`${progress}%`}}/></div>
-                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3,textAlign:'center'}}>{progress}%</div>
+              ) : (
+                <div style={{display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:500,color:'#185FA5'}}>{completed}/{total}</div>
+                    <div style={{fontSize:11,color:'var(--text-muted)'}}>زيارات العقد</div>
+                    {extraVisits.length > 0 && (
+                      <div style={{fontSize:11,color:'#A32D2D',fontWeight:700,marginTop:3}}>
+                        + {extraDone}/{extraVisits.length} إضافية
+                      </div>
+                    )}
+                  </div>
+                  <div style={{width:70}}>
+                    <div className="progress-bar" style={{height:6}}><div className="progress-fill" style={{width:`${progress}%`}}/></div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3,textAlign:'center'}}>{progress}%</div>
+                  </div>
+                  <div style={{display:'flex',gap:6}}>
+                    {total===0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'+ Load Default'}</button>}
+                    {total>0 && <button className="btn btn-sm" style={{color:'#854F0B',borderColor:'#854F0B'}} onClick={resetToDefault} disabled={saving}>↺ Reset</button>}
+                    {total>0 && <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={deleteAllVisits}>🗑 Delete All</button>}
+                  </div>
                 </div>
-                <div style={{display:'flex',gap:6}}>
-                  {total===0 && <button className="btn btn-sm" style={{color:'#185FA5',borderColor:'#185FA5'}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'+ Load Default'}</button>}
-                  {total>0 && <button className="btn btn-sm" style={{color:'#854F0B',borderColor:'#854F0B'}} onClick={resetToDefault} disabled={saving}>↺ Reset</button>}
-                  {total>0 && <button className="btn btn-sm" style={{color:'#A32D2D',borderColor:'#A32D2D'}} onClick={deleteAllVisits}>🗑 Delete All</button>}
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
           <div className="card">
+            {/* صفوف الخطة في مشروع شهري بقايا من قبل التحويل — تُسمّى
+                بذلك صراحةً فلا تُقرأ عقداً قائماً */}
+            {isPeriodic && visits.length > 0 && (
+              <div style={{background:'var(--amber-light,#FAEEDA)',
+                           border:'1px solid rgba(133,79,11,.28)',borderRadius:8,
+                           padding:'10px 13px',marginBottom:12,fontSize:12.5,
+                           color:'#6b4a12',lineHeight:1.7}}>
+                <strong style={{color:'#854F0B'}}>خطة سابقة — قبل التحويل إلى الإشراف الشهري.</strong>{' '}
+                هذا المشروع عقده شهري ولا خطة مراحل له. الصفوف أدناه سجلٌّ تاريخي
+                لما أُنجز قبل التحويل، ولا تُحسب عقداً. الزيارات الجارية تُسجَّل
+                من «تسجيل زيارة دورية» وتُعدّ في «الإشراف الدوري».
+              </div>
+            )}
             {loading ? <div style={{color:'var(--text-muted)',padding:16}}>Loading...</div> :
               visits.length===0 ? (
-                <div className="empty">
-                  <p>No visits yet.</p>
-                  <button className="btn btn-primary" style={{marginTop:12}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'Load Default Visits'}</button>
-                </div>
+                isPeriodic ? (
+                  <div className="empty">
+                    <p>لا خطة مراحل لهذا المشروع — إشرافه شهري.</p>
+                    <p style={{fontSize:12,marginTop:8,color:'var(--text-muted)'}}>
+                      زياراته تُسجَّل من «تسجيل زيارة دورية» وتُعدّ شهرياً في «الإشراف الدوري».
+                    </p>
+                    <button className="btn btn-primary" style={{marginTop:12}}
+                      onClick={()=>nav(`/periodic-visit?project=${selectedProject.id}`)}>
+                      + تسجيل زيارة دورية
+                    </button>
+                  </div>
+                ) : (
+                  <div className="empty">
+                    <p>No visits yet.</p>
+                    <button className="btn btn-primary" style={{marginTop:12}} onClick={loadDefaultVisits} disabled={saving}>{saving?'Loading...':'Load Default Visits'}</button>
+                  </div>
+                )
               ) : (
                 <table className="table">
                   <thead><tr>
