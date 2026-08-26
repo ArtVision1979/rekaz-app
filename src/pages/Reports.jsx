@@ -5,6 +5,40 @@ import { createRework, markDecision, saveProjectRate, fmtFee } from '../lib/rewo
 import { useSearchParams } from 'react-router-dom'
 
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
+// ملاحظات الزيارة الدورية: لا قالب لها، فلا يراها التقرير الذي يرسم
+// القالب ثم يبحث عن نتيجة كل بند. تُرسم من النتائج مباشرة.
+function buildFreeHtml(free) {
+  if (!free.length) return ''
+  const rows = free.map((r, i) => {
+    const v = r.result || 'pending'
+    const color = v==='pass'?'#0F6E56':v==='fail'?'#A32D2D':v==='na'?'#888':'#aaa'
+    const label = v==='pass'?'✓ Pass':v==='fail'?'✗ Fail':v==='na'?'— N/A':'○ —'
+    const bg = v==='fail' ? '#FFF5F5' : i%2===0 ? '#fafafa' : 'white'
+    return `<tr style="background:${bg};">
+      <td style="padding:6px 10px;color:#888;">${i+1}</td>
+      <td style="padding:6px 10px;"><div>${r.item_text || ''}</div>${
+        r.notes ? `<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:4px;padding:2px 8px;margin-top:4px;display:inline-block;">💬 ${r.notes}</div>` : ''}</td>
+      <td style="padding:6px 10px;text-align:center;color:${color};font-weight:600;">${label}</td>
+    </tr>`
+  }).join('')
+  const fails = free.filter(r => r.result === 'fail').length
+  return `
+    <div style="margin-bottom:20px;">
+      <div dir="rtl" style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:6px;text-align:right;">
+        ملاحظات الزيارة · Visit Observations
+        <span dir="ltr" style="font-weight:400;color:#666;"> (${free.length}${fails?` · ✗ ${fails} Fail`:''})</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:#185FA5;color:white;">
+          <th style="padding:7px 10px;text-align:left;width:30px;">#</th>
+          <th style="padding:7px 10px;text-align:left;">Observation — الملاحظة</th>
+          <th style="padding:7px 10px;text-align:center;width:90px;">Result</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+}
+
 function buildChecklistHtml(cl, res) {
   if (!cl.length) return ''
   const inspItems = cl.filter(i => i.item_type !== 'recommendation')
@@ -29,7 +63,7 @@ function buildChecklistHtml(cl, res) {
   }
 
   const inspHtml = inspItems.length > 0 ? `
-    <div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:6px;">نقاط الفحص · Inspection Items</div>
+    <div dir="rtl" style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:6px;text-align:right;">نقاط الفحص · Inspection Items</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;">
       <thead><tr style="background:#185FA5;color:white;">
         <th style="padding:7px 10px;text-align:left;width:30px;">#</th>
@@ -41,7 +75,7 @@ function buildChecklistHtml(cl, res) {
 
   const recHtml = recItems.length > 0 ? `
     <div style="background:#FFFBF5;border:0.5px solid #F0D9B5;border-radius:8px;padding:12px 14px;margin-top:4px;">
-      <div style="font-size:11px;font-weight:700;color:#854F0B;text-transform:uppercase;margin-bottom:8px;">⚠️ توصيات ما بعد الصب · Post-Pour Recommendations</div>
+      <div dir="rtl" style="font-size:11px;font-weight:700;color:#854F0B;text-transform:uppercase;margin-bottom:8px;text-align:right;">⚠️ توصيات ما بعد الصب · Post-Pour Recommendations</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead><tr style="background:#F0D9B5;color:#633806;">
           <th style="padding:6px 10px;text-align:left;width:30px;">#</th>
@@ -131,6 +165,8 @@ export function Reports() {
   const [selectedVisit, setSelectedVisit] = useState(null)
   const [checklist, setChecklist] = useState([])
   const [checklistResults, setChecklistResults] = useState({})
+  // ملاحظات حرّة لا تنتمي لأي قالب — عماد الزيارة الدورية
+  const [freeResults, setFreeResults] = useState([])
   const [photos, setPhotos] = useState([])
   const [projectSearch, setProjectSearch] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -287,9 +323,16 @@ export function Reports() {
     } else setParentVisit(null)
     setChecklist(clData || [])
     setNotes(visit.notes || '')
+    // الملاحظة الحرّة (الزيارة الدورية) بلا checklist_item_id، فمفتاحها
+    // null — وكلها تتزاحم على مفتاح واحد فتمحو إحداها الأخرى. تُفصل.
     const resultsMap = {}
-    ;(results || []).forEach(r => { resultsMap[r.checklist_item_id] = r })
+    const free = []
+    ;(results || []).forEach(r => {
+      if (r.checklist_item_id) resultsMap[r.checklist_item_id] = r
+      else free.push(r)
+    })
     setChecklistResults(resultsMap)
+    setFreeResults(free)
     setPhotos(ph || [])
   }
 
@@ -398,7 +441,7 @@ export function Reports() {
           ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
         </div>`).join('')
       const checklistHtml = buildChecklistHtml(checklist, checklistResults)
-      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, photoHtml, photos, rw })
+      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, freeHtml: buildFreeHtml(freeResults), photoHtml, photos, rw })
 
       // أرشفة نسخة ثابتة من التقرير في التخزين وربطها بالسجل، حتى
       // يمكن فتح التقرير لاحقاً كما صدر. سابقاً كان عمود pdf_path
@@ -627,7 +670,7 @@ export function Reports() {
     } catch(e) { alert('Error: ' + e.message) } finally { setGeneratingFull(false) }
   }
 
-  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, photoHtml, photos, rw }) {
+  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, freeHtml, photoHtml, photos, rw }) {
     return `<!DOCTYPE html>
       <html><head><meta charset="UTF-8"><title>Site Visit Report - ${reportNo}</title>
       <style>* {box-sizing:border-box;margin:0;padding:0;} body {font-family:Arial,sans-serif;padding:36px;color:#111;font-size:13px;} .info-row {display:flex;flex-direction:column;gap:2px;margin-bottom:6px;} .info-label {font-size:10px;color:#888;text-transform:uppercase;} .info-value {font-size:13px;font-weight:500;} @media print {body {padding:20px;} .no-print {display:none !important;}}</style>
@@ -653,6 +696,7 @@ export function Reports() {
       </div>
       ${visit.notes?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div style="font-size:13px;line-height:1.6;">${visit.notes}</div></div>`:''}
       ${checklistHtml}
+      ${freeHtml}
       ${buildReworkHtml(rw)}
       ${photos.length>0?`<div style="margin-bottom:20px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">${photoHtml}</div></div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
@@ -810,13 +854,58 @@ export function Reports() {
                 {selectedVisit.notes && <div style={{marginTop:10,padding:'10px 12px',background:'var(--bg)',borderRadius:8,fontSize:12,color:'var(--text-muted)'}}>{selectedVisit.notes}</div>}
               </div>
 
+              {/* ملاحظات الزيارة الدورية — تُعرض من النتائج مباشرة،
+                  فلا قالب لها يُرسَم منه */}
+              {freeResults.length > 0 && (
+                <div className="card" style={{marginBottom:16}}>
+                  <div style={{fontWeight:500,fontSize:13,marginBottom:12,
+                               display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span>ملاحظات الزيارة · Visit Observations</span>
+                    <span dir="ltr" style={{fontSize:11,color:'var(--text-muted)',fontWeight:400}}>
+                      {freeResults.length} · ✗ {freeResults.filter(r=>r.result==='fail').length} Fail
+                    </span>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {freeResults.map((r,i) => {
+                      const v = r.result || 'pending'
+                      const c = v==='pass'?'#0F6E56':v==='fail'?'#A32D2D':'#888'
+                      return (
+                        <div key={r.id}
+                          style={{display:'flex',gap:10,alignItems:'flex-start',
+                                  background: v==='fail' ? '#FCEBEB' : 'var(--bg)',
+                                  borderRadius:7,padding:'8px 11px'}}>
+                          <span style={{fontSize:11,color:'var(--text-muted)',minWidth:16}}>{i+1}</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12.5}}>{r.item_text}</div>
+                            {r.notes && (
+                              <div style={{fontSize:11,color:'#854F0B',marginTop:3}}>💬 {r.notes}</div>
+                            )}
+                          </div>
+                          <span style={{fontSize:11.5,fontWeight:700,color:c,flexShrink:0}}>
+                            {v==='pass'?'✓ Pass':v==='fail'?'✗ Fail':v==='na'?'— N/A':'○'}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {checklist.length > 0 && (
                 <div className="card" style={{marginBottom:16}}>
-                  <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>
-                    Inspection Checklist — قائمة الفحص
-                    <span style={{fontSize:11,color:'var(--text-muted)',marginRight:8,fontWeight:400}}>
-                      {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass ·
-                      {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail
+                  {/* الأعداد في وعاء dir="ltr" مستقل: كانت ملتصقة بالنص
+                      العربي في سياق إنجليزي، فتلتحم «قائمة الفحص0» وتنقلب
+                      الفواصل — نفس علّة اتجاه النص في ملف الـ PDF */}
+                  <div style={{fontWeight:500,fontSize:13,marginBottom:12,
+                               display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span>Inspection Checklist — قائمة الفحص</span>
+                    <span dir="ltr" style={{fontSize:11,color:'var(--text-muted)',fontWeight:400,
+                                            fontVariantNumeric:'tabular-nums'}}>
+                      {'✓'} {Object.values(checklistResults).filter(r=>r.result==='pass').length} Pass
+                      {' · '}
+                      {'✗'} {Object.values(checklistResults).filter(r=>r.result==='fail').length} Fail
+                      {' · '}
+                      — {Object.values(checklistResults).filter(r=>r.result==='na').length} N/A
                     </span>
                   </div>
 
