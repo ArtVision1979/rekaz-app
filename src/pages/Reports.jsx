@@ -39,6 +39,26 @@ function buildFreeHtml(free) {
     </div>`
 }
 
+// التوصية تقول للمقاول ما يفعله — تُطبع بارزة لا مدفونة في الملاحظات
+function buildRecsHtml(text) {
+  const lines = (text || '').split('\n').map(l => l.trim()).filter(Boolean)
+  if (!lines.length) return ''
+  const items = lines.map((l, i) => `
+    <tr style="background:${i%2===0?'#FFFBF5':'#fff'};">
+      <td style="padding:6px 10px;color:#854F0B;width:26px;font-weight:700;">${i+1}</td>
+      <td style="padding:6px 10px;">${l}</td>
+    </tr>`).join('')
+  return `
+    <div style="background:#FFFBF5;border:1px solid #F0D9B5;border-radius:8px;padding:12px 14px;margin-bottom:16px;page-break-inside:avoid;break-inside:avoid;">
+      <div dir="rtl" style="font-size:11px;font-weight:700;color:#854F0B;text-transform:uppercase;margin-bottom:8px;text-align:right;">
+        التوصيات للمقاول · Recommendations to Contractor
+      </div>
+      <table dir="rtl" style="width:100%;border-collapse:collapse;font-size:12.5px;text-align:right;">
+        <tbody>${items}</tbody>
+      </table>
+    </div>`
+}
+
 function buildChecklistHtml(cl, res) {
   if (!cl.length) return ''
   const inspItems = cl.filter(i => i.item_type !== 'recommendation')
@@ -174,11 +194,21 @@ export function Reports() {
   const [saving, setSaving] = useState(false)
   const [generatingFull, setGeneratingFull] = useState(false)
   const [notes, setNotes] = useState('')
+  // التوصيات للمقاول — تُحرَّر هنا قبل إصدار التقرير
+  const [recs, setRecs]         = useState('')
+  const [recsDirty, setDirty]   = useState(false)
+  const [recsSaving, setRSave]  = useState(false)
+  const [recLib, setRecLib]     = useState([])
   const dropdownRef = useRef(null)
   const [searchParams] = useSearchParams()
 
   useEffect(() => { loadProjects() }, [])
   useEffect(() => { if (selectedProject) loadVisits(selectedProject.id) }, [selectedProject])
+  // ما كُتب سابقاً يُقترح لاحقاً — التوصيات العامة تنشأ من الاستعمال
+  useEffect(() => {
+    supabase.from('recommendation_library').select('*').limit(12)
+      .then(({ data }) => setRecLib(data || []))
+  }, [])
   useEffect(() => { if (selectedVisit) loadVisitData(selectedVisit) }, [selectedVisit])
 
   useEffect(() => {
@@ -323,6 +353,7 @@ export function Reports() {
     } else setParentVisit(null)
     setChecklist(clData || [])
     setNotes(visit.notes || '')
+    setRecs(visit.recommendations || ''); setDirty(false)
     // الملاحظة الحرّة (الزيارة الدورية) بلا checklist_item_id، فمفتاحها
     // null — وكلها تتزاحم على مفتاح واحد فتمحو إحداها الأخرى. تُفصل.
     const resultsMap = {}
@@ -412,8 +443,35 @@ export function Reports() {
   // الحقول، فطُبع البند بـ«٠ ملاحظة» ومرحلة فارغة و«بلا رسوم».
   const isEvent = x => !!x && typeof x === 'object' && ('nativeEvent' in x || 'preventDefault' in x)
 
+  // تُحفظ على الزيارة، فتبقى مع سجلّها لا مع التقرير وحده
+  async function saveRecs() {
+    if (!selectedVisit) return
+    setRSave(true)
+    const { error } = await supabase.from('site_visits')
+      .update({ recommendations: recs || null }).eq('id', selectedVisit.id)
+    setRSave(false)
+    if (error) { alert('تعذّر حفظ التوصيات: ' + error.message); return }
+    setDirty(false)
+    setSelectedVisit(v => v ? { ...v, recommendations: recs } : v)
+    setVisits(list => list.map(v => v.id === selectedVisit.id ? { ...v, recommendations: recs } : v))
+    supabase.from('recommendation_library').select('*').limit(12)
+      .then(({ data }) => setRecLib(data || []))
+  }
+
+  function addRec(line) {
+    setRecs(r => {
+      const has = r.split('\n').map(x => x.trim()).includes(line.trim())
+      if (has) return r
+      return r.trim() ? r.replace(/\s*$/, '') + '\n' + line : line
+    })
+    setDirty(true)
+  }
+
   async function generateReport(rwArg) {
     if (!selectedVisit || !selectedProject) return
+    if (recsDirty) {
+      if (!confirm('التوصيات لم تُحفظ بعد.\nاحفظها أولاً لتظهر في التقرير.\n\nمتابعة بلا حفظ؟')) return
+    }
     if (needsDecision && !askedRework) {
       setRwFee(selectedProject?.visit_fee != null ? String(selectedProject.visit_fee) : '')
       setRwErr(''); setAskRework(true); return
@@ -441,7 +499,7 @@ export function Reports() {
           ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
         </div>`).join('')
       const checklistHtml = buildChecklistHtml(checklist, checklistResults)
-      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, freeHtml: buildFreeHtml(freeResults), photoHtml, photos, rw })
+      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, freeHtml: buildFreeHtml(freeResults), recsHtml: buildRecsHtml(recs), photoHtml, photos, rw })
 
       // أرشفة نسخة ثابتة من التقرير في التخزين وربطها بالسجل، حتى
       // يمكن فتح التقرير لاحقاً كما صدر. سابقاً كان عمود pdf_path
@@ -670,7 +728,7 @@ export function Reports() {
     } catch(e) { alert('Error: ' + e.message) } finally { setGeneratingFull(false) }
   }
 
-  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, freeHtml, photoHtml, photos, rw }) {
+  function buildSingleHtml({ reportNo, today, project, visit, checklistHtml, freeHtml, recsHtml, photoHtml, photos, rw }) {
     return `<!DOCTYPE html>
       <html><head><meta charset="UTF-8"><title>Site Visit Report - ${reportNo}</title>
       <style>* {box-sizing:border-box;margin:0;padding:0;} body {font-family:Arial,sans-serif;padding:36px;color:#111;font-size:13px;} .info-row {display:flex;flex-direction:column;gap:2px;margin-bottom:6px;} .info-label {font-size:10px;color:#888;text-transform:uppercase;} .info-value {font-size:13px;font-weight:500;} @media print {body {padding:20px;} .no-print {display:none !important;}}</style>
@@ -697,6 +755,7 @@ export function Reports() {
       ${visit.notes?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div style="font-size:13px;line-height:1.6;">${visit.notes}</div></div>`:''}
       ${checklistHtml}
       ${freeHtml}
+      ${recsHtml}
       ${buildReworkHtml(rw)}
       ${photos.length>0?`<div style="margin-bottom:20px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:10px;">الصور · Photos (${photos.length})</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">${photoHtml}</div></div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:48px;">
@@ -852,6 +911,65 @@ export function Reports() {
                   <div><span style={{color:'var(--text-muted)'}}>Severity: </span>{selectedVisit.severity}</div>
                 </div>
                 {selectedVisit.notes && <div style={{marginTop:10,padding:'10px 12px',background:'var(--bg)',borderRadius:8,fontSize:12,color:'var(--text-muted)'}}>{selectedVisit.notes}</div>}
+              </div>
+
+              {/* ── التوصيات للمقاول ──
+                  تُحرَّر قبل الإصدار، فما يصل العميل هو ما راجعه المكتب.
+                  والمقترحات أسفلها من توصيات كُتبت سابقاً، فلا يُعاد
+                  كتابة نفس الجملة في كل زيارة. */}
+              <div className="card" style={{marginBottom:16,
+                    border:'1px solid rgba(133,79,11,.3)', background:'var(--amber-light,#FFFBF5)'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,
+                             flexWrap:'wrap',marginBottom:9}}>
+                  <span style={{fontWeight:600,fontSize:13,color:'#854F0B'}}>
+                    التوصيات للمقاول · Recommendations
+                  </span>
+                  <span style={{fontSize:11,color:'var(--text-muted)'}}>
+                    سطر لكل توصية — تظهر مرقّمة في التقرير
+                  </span>
+                  {recsDirty && (
+                    <span style={{fontSize:10.5,fontWeight:700,color:'#A32D2D',
+                                  background:'#FCEBEB',padding:'2px 8px',borderRadius:11}}>
+                      غير محفوظة
+                    </span>
+                  )}
+                </div>
+
+                <textarea className="form-input" rows={4}
+                  style={{width:'100%',fontSize:12.5,lineHeight:1.8,background:'#fff'}}
+                  value={recs}
+                  placeholder={'مثال:\nيُربط حديد الأعمدة قبل الصب بيوم\nتُنظَّف القوالب من مخلّفات البناء\nيُوضع غطاء خرساني ٢٥ مم'}
+                  onChange={e => { setRecs(e.target.value); setDirty(true) }}/>
+
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginTop:9}}>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:12}}
+                    disabled={recsSaving || !recsDirty} onClick={saveRecs}>
+                    {recsSaving ? 'جارٍ الحفظ…' : 'حفظ التوصيات'}
+                  </button>
+                  {recs.trim() && (
+                    <span style={{fontSize:11.5,color:'var(--text-muted)'}}>
+                      {recs.split('\n').filter(l => l.trim()).length} توصية
+                    </span>
+                  )}
+                </div>
+
+                {recLib.length > 0 && (
+                  <div style={{marginTop:11,paddingTop:10,borderTop:'1px solid rgba(133,79,11,.2)'}}>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:7}}>
+                      توصيات سبق استعمالها — اضغط لإضافتها:
+                    </div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {recLib.map(r => (
+                        <button key={r.text} type="button" className="btn btn-sm"
+                          style={{fontSize:11,background:'#fff'}}
+                          title={`استُعملت ${r.times_used} مرة`}
+                          onClick={() => addRec(r.text)}>
+                          + {r.text.length > 42 ? r.text.slice(0,42) + '…' : r.text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* ملاحظات الزيارة الدورية — تُعرض من النتائج مباشرة،
