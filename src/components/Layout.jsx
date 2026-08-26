@@ -29,6 +29,7 @@ export default function Layout() {
     { path:'/schedule', label: t.schedule, icon:<svg width="16" height="16" fill="none" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M5 1v4M11 1v4M2 7h12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg> },
     { path:'/consultations', label: lang==='ar'?'الاستشارات الهندسية':'Consultations', icon:<svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="currentColor" strokeWidth="1.2"/><path d="M8 5v4M8 11v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg> },
     { path:'/users', label: t.users, icon:<svg width="16" height="16" fill="none" viewBox="0 0 16 16"><circle cx="6" cy="5" r="3" stroke="currentColor" strokeWidth="1.2"/><path d="M1 14c0-3 2-5 5-5s5 2 5 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M11 7l1.5 1.5L15 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+    { path:'/trash', label: lang==='ar'?'سلة المحذوفات':'Trash', icon:<svg width="16" height="16" fill="none" viewBox="0 0 16 16"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 9h6.6l.7-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 7.5v3.5M8 11l-1.3-1.3M8 11l1.3-1.3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg> },
   ]
 
   const initials = user?.email?.slice(0,2).toUpperCase()||'AR'

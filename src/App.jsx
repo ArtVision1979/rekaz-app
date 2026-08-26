@@ -13,6 +13,7 @@ import Milestones from './pages/Milestones.jsx'
 import Photos from './pages/Photos.jsx'
 import Drawings from './pages/Drawings.jsx'
 import Users from './pages/Users.jsx'
+import Trash from './pages/Trash.jsx'
 import Consultations from './pages/Consultations.jsx'
 import ProjectVisits from './pages/ProjectVisits.jsx'
 import PeriodReport from './pages/PeriodReport.jsx'
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="periodic-visit" element={<PeriodicVisit />} />
         <Route path="schedule" element={<Schedule />} />
         <Route path="users" element={<Users />} />
+        <Route path="trash" element={<Trash />} />
         <Route path="consultations" element={<Consultations />} />
       </Route>
     </Routes>
