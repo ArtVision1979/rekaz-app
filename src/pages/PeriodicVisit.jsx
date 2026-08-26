@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
@@ -18,14 +18,23 @@ import EngineerSelect from '../components/EngineerSelect.jsx'
 //  أي بند يُسجَّل «ملاحظة» يفتح مهمة متابعة مسندة للمهندس.
 // ─────────────────────────────────────────────────────────────────────
 
+const localToday = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
 export default function PeriodicVisit() {
   const nav = useNavigate()
   const { user: me } = useCurrentUser()
 
   const [projects, setProjects] = useState([])
   const [vocab, setVocab]       = useState([])
+  // القدوم من شاشة الإشراف الدوري: المشروع والشهر محدّدان مسبقاً،
+  // فلا يعيد المهندس اختيارهما ولا يقع في شهر غير الذي قصده
+  const [sp] = useSearchParams()
   const [form, setForm] = useState({
-    project_id: '', visit_date: new Date().toISOString().split('T')[0],
+    project_id: sp.get('project') || '',
+    visit_date: sp.get('date') || localToday(),
     engineer_id: null, engineer_name: '', notes: '',
   })
   const [obs, setObs]     = useState([])

@@ -26,6 +26,11 @@ export default function PeriodicSupervision() {
   const [loading, setLoading]   = useState(true)
   const [busy, setBusy]         = useState(null)
   const [err, setErr]           = useState('')
+  // الشهر المفتوح وزياراته — كان الصف نهاية الطريق: رقمٌ بلا سبيل
+  // لرؤية ما وراءه ولا لتعديله ولا للإضافة إليه
+  const [openMonth, setOpenMonth] = useState(null)
+  const [monthVisits, setMonthVisits] = useState([])
+  const [loadingVisits, setLoadingVisits] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -49,6 +54,32 @@ export default function PeriodicSupervision() {
       console.error('تعذّر تحميل الإشراف الدوري:', e?.message ?? e)
       setErr(e?.message ?? String(e))
     } finally { setLoading(false) }
+  }
+
+  async function toggleMonth(m) {
+    if (openMonth === m.id) { setOpenMonth(null); setMonthVisits([]); return }
+    setOpenMonth(m.id); setLoadingVisits(true); setMonthVisits([])
+    const from = `${m.year}-${String(m.month).padStart(2,'0')}-01`
+    const to   = new Date(m.year, m.month, 0)   // آخر يوم في الشهر
+    const toStr = `${m.year}-${String(m.month).padStart(2,'0')}-${String(to.getDate()).padStart(2,'0')}`
+    const { data, error } = await supabase.from('site_visits')
+      .select('*, visit_checklist_results(id, result)')
+      .eq('project_id', m.project_id)
+      .gte('visit_date', from).lte('visit_date', toStr)
+      .order('visit_date')
+    if (error) setErr('تعذّر جلب زيارات الشهر: ' + error.message)
+    else setMonthVisits(data || [])
+    setLoadingVisits(false)
+  }
+
+  // إضافة زيارة داخل هذا الشهر تحديداً — لا في تاريخ اليوم
+  function addVisitTo(m) {
+    const today = new Date()
+    const inMonth = today.getFullYear() === m.year && today.getMonth() + 1 === m.month
+    const last = new Date(m.year, m.month, 0).getDate()
+    const day = inMonth ? today.getDate() : last
+    const date = `${m.year}-${String(m.month).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+    nav(`/periodic-visit?project=${m.project_id}&date=${date}`)
   }
 
   async function closeMonth(period) {
@@ -150,15 +181,21 @@ export default function PeriodicSupervision() {
                   <th>زيارات إضافية</th><th>الحالة</th><th></th>
                 </tr></thead>
                 <tbody>
-                  {mine.map(m => {
+                  {mine.flatMap(m => {
                     const short = m.actual_visits < m.required_visits
-                    return (
+                    return [(
                       <tr key={m.id}>
                         <td style={{fontWeight:600}}>{AR_MONTHS[m.month-1]} {m.year}</td>
                         <td>{m.required_visits}</td>
-                        <td style={{fontWeight:700,
-                             color: short ? (m.is_current_month ? '#854F0B' : '#A32D2D') : '#0F6E56'}}>
-                          {m.actual_visits}
+                        <td>
+                          <button type="button" onClick={()=>toggleMonth(m)}
+                            title="عرض زيارات هذا الشهر"
+                            style={{border:'none',background:'none',cursor:'pointer',padding:0,
+                                    font:'inherit',fontWeight:700,display:'flex',alignItems:'center',gap:5,
+                                    color: short ? (m.is_current_month ? '#854F0B' : '#A32D2D') : '#0F6E56'}}>
+                            {m.actual_visits}
+                            <span style={{fontSize:9,opacity:.7}}>{openMonth===m.id ? '▲' : '▼'}</span>
+                          </button>
                         </td>
                         {/* الزيارات داخل العدد المتعاقد عليه مدفوعة سلفاً،
                             فالمحتسَب هو ما زاد وحده */}
@@ -197,7 +234,69 @@ export default function PeriodicSupervision() {
                           )}
                         </td>
                       </tr>
-                    )
+                    ), openMonth === m.id && (
+                      <tr key={m.id + '-open'}>
+                        <td colSpan={6} style={{background:'var(--bg)',padding:'12px 14px'}}>
+                          {loadingVisits ? (
+                            <div style={{fontSize:12.5,color:'var(--text-muted)'}}>جارٍ التحميل…</div>
+                          ) : (
+                            <>
+                              <div style={{display:'flex',alignItems:'center',gap:10,
+                                           flexWrap:'wrap',marginBottom:monthVisits.length?10:0}}>
+                                <strong style={{fontSize:12.5}}>
+                                  زيارات {AR_MONTHS[m.month-1]} {m.year}
+                                </strong>
+                                <span style={{fontSize:11.5,color:'var(--text-muted)'}}>
+                                  {monthVisits.length} من {m.required_visits}
+                                </span>
+                                <button className="btn btn-sm btn-primary" style={{fontSize:11.5}}
+                                  onClick={()=>addVisitTo(m)}>+ زيارة في هذا الشهر</button>
+                              </div>
+
+                              {!monthVisits.length ? (
+                                <div style={{fontSize:12.5,color:'var(--text-muted)'}}>
+                                  لا زيارات مسجّلة في هذا الشهر.
+                                </div>
+                              ) : (
+                                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                                  {monthVisits.map(v => {
+                                    const res = v.visit_checklist_results || []
+                                    const fails = res.filter(r => r.result === 'fail').length
+                                    return (
+                                      <div key={v.id}
+                                        style={{display:'flex',gap:11,alignItems:'center',flexWrap:'wrap',
+                                                background:'var(--bg-card,#fff)',border:'1px solid var(--border)',
+                                                borderRadius:7,padding:'8px 11px'}}>
+                                        <span style={{fontSize:12,fontWeight:700,
+                                                      fontVariantNumeric:'tabular-nums',minWidth:88}}>
+                                          {v.visit_date}
+                                        </span>
+                                        <span style={{fontSize:11.5,color:'var(--text-muted)',minWidth:100}}>
+                                          {v.engineer_name || '—'}
+                                        </span>
+                                        <span style={{fontSize:11.5,flex:1,minWidth:130,
+                                                      overflow:'hidden',textOverflow:'ellipsis',
+                                                      whiteSpace:'nowrap'}}>
+                                          {v.notes || '—'}
+                                        </span>
+                                        <span style={{fontSize:11,fontWeight:700,
+                                                      color: fails ? '#A32D2D' : 'var(--text-muted)'}}>
+                                          {res.length} ملاحظة{fails ? ` · ${fails} راسبة` : ''}
+                                        </span>
+                                        <button className="btn btn-sm" style={{fontSize:11}}
+                                          onClick={()=>nav(`/visits?project=${m.project_id}`)}>تعديل</button>
+                                        <button className="btn btn-sm" style={{fontSize:11}}
+                                          onClick={()=>nav(`/reports?project=${m.project_id}`)}>التقرير</button>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )].filter(Boolean)
                   })}
                 </tbody>
               </table>
