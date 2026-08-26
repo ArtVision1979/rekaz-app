@@ -35,12 +35,16 @@ export default function PeriodicVisit() {
   const [form, setForm] = useState({
     project_id: sp.get('project') || '',
     visit_date: sp.get('date') || localToday(),
-    engineer_id: null, engineer_name: '', notes: '',
+    engineer_id: null, engineer_name: '', notes: '', summary: '',
   })
   const [obs, setObs]     = useState([])
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr]     = useState('')
+  // موضوع الزيارة: المراحل الرئيسية ثابتة، وما جدّ يُضاف بنفس الطريقة
+  const [stages, setStages]   = useState([])
+  const [prior, setPrior]     = useState([])   // زيارات المشروع السابقة بالتاريخ
+  const [subjOther, setOther] = useState(false)
   const fileRefs = useRef({})
 
   useEffect(() => { loadRefs() }, [])
@@ -62,6 +66,33 @@ export default function PeriodicVisit() {
     if (e2) console.error('تعذّر جلب المفردات:', e2.message)
     setProjects(pr || []); setVocab(vo || [])
   }
+
+  // المراحل الرئيسية من القوالب — ثابتة لا تتغيّر بتغيّر المشروع،
+  // ويُضاف إليها ما سبق أن كتبه المهندس في زيارة دورية بنفس المنهج
+  async function loadStages(projectId) {
+    const [{ data: tpl }, { data: used }] = await Promise.all([
+      supabase.from('visit_templates').select('title, title_ar, order_index').order('order_index'),
+      supabase.from('site_visits').select('notes, visit_date')
+        .eq('project_id', projectId).order('visit_date', { ascending: false })
+    ])
+    const seen = new Set()
+    const list = []
+    ;(tpl || []).forEach(t => {
+      const label = t.title_ar || t.title
+      if (label && !seen.has(label)) { seen.add(label); list.push({ label, kind: 'قياسية' }) }
+    })
+    ;(used || []).forEach(v => {
+      const n = (v.notes || '').trim()
+      if (n && n !== 'زيارة دورية' && !seen.has(n)) { seen.add(n); list.push({ label: n, kind: 'سابقة' }) }
+    })
+    setStages(list)
+    setPrior(used || [])
+  }
+
+  useEffect(() => {
+    if (form.project_id) loadStages(form.project_id)
+    else { setStages([]); setPrior([]) }
+  }, [form.project_id])
 
   function addObs(text) {
     const t = (text || '').trim()
@@ -96,6 +127,7 @@ export default function PeriodicVisit() {
         engineer_id: form.engineer_id,
         engineer_name: form.engineer_name,
         notes: form.notes || 'زيارة دورية',
+        summary: form.summary || null,
         severity: obs.some(o => o.result === 'fail') ? 'medium' : 'low',
         status: 'submitted',
       }).select().single()
@@ -192,6 +224,66 @@ export default function PeriodicVisit() {
         </div>
       </div>
 
+      {/* ── موضوع الزيارة ──
+          المراحل الرئيسية ثابتة في القائمة، فالمشروع الشهري يمرّ بنفس
+          مراحل البناء. وما جدّ يكتبه المهندس ويُحفظ، فيظهر لمن بعده
+          بنفس المنهج بدل أن يُعاد اختراع الصياغة كل مرة. */}
+      <div className="card" style={{marginBottom:14}}>
+        <label className="form-label">موضوع الزيارة *</label>
+        {!subjOther ? (
+          <select className="form-input" value={form.notes}
+            onChange={e => {
+              if (e.target.value === '__other__') { setOther(true); setForm(f=>({...f,notes:''})) }
+              else setForm(f => ({ ...f, notes: e.target.value }))
+            }}>
+            <option value="">— اختر المرحلة —</option>
+            <optgroup label="المراحل الرئيسية">
+              {stages.filter(x=>x.kind==='قياسية').map(x=>(
+                <option key={x.label} value={x.label}>{x.label}</option>
+              ))}
+            </optgroup>
+            {stages.some(x=>x.kind==='سابقة') && (
+              <optgroup label="سبق استعمالها في هذا المشروع">
+                {stages.filter(x=>x.kind==='سابقة').map(x=>(
+                  <option key={x.label} value={x.label}>{x.label}</option>
+                ))}
+              </optgroup>
+            )}
+            <option value="__other__">✎ موضوع آخر — أكتبه…</option>
+          </select>
+        ) : (
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <input className="form-input" style={{flex:1,minWidth:220}} autoFocus
+              value={form.notes} placeholder="اكتب موضوع الزيارة…"
+              onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
+            <button type="button" className="btn btn-sm"
+              onClick={()=>{ setOther(false); setForm(f=>({...f,notes:''})) }}>رجوع للقائمة</button>
+          </div>
+        )}
+        <div style={{fontSize:11,color:'var(--text-muted)',marginTop:5,lineHeight:1.6}}>
+          يظهر في التقرير عنواناً للزيارة. وما تكتبه جديداً يُضاف للقائمة تلقائياً.
+        </div>
+
+        {/* الزيارات السابقة مرتّبة بالتاريخ — ليرى المهندس أين وصل */}
+        {prior.length > 0 && (
+          <div style={{marginTop:12,paddingTop:11,borderTop:'1px solid var(--border)'}}>
+            <div style={{fontSize:11.5,color:'var(--text-muted)',marginBottom:7}}>
+              آخر زيارات هذا المشروع:
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:4,maxHeight:150,overflowY:'auto'}}>
+              {prior.slice(0,8).map((v,i)=>(
+                <div key={i} style={{display:'flex',gap:10,alignItems:'center',fontSize:11.5}}>
+                  <span style={{fontVariantNumeric:'tabular-nums',color:'var(--text-muted)',
+                                minWidth:82}}>{v.visit_date}</span>
+                  <span style={{flex:1,minWidth:0,overflow:'hidden',
+                                textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.notes || '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* الاختيار الذكي */}
       <div className="card" style={{marginBottom:14}}>
         <label className="form-label">ماذا لاحظت اليوم؟</label>
@@ -261,10 +353,10 @@ export default function PeriodicVisit() {
       ))}
 
       <div className="card">
-        <label className="form-label">ملاحظات عامة على الزيارة</label>
-        <textarea className="form-input" rows="3" value={form.notes}
+        <label className="form-label">ملاحظات عامة إضافية</label>
+        <textarea className="form-input" rows="3" value={form.summary}
           placeholder="الحالة العامة، تقدّم العمل، أي شيء لا يخص بنداً بعينه…"
-          onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
+          onChange={e=>setForm(f=>({...f,summary:e.target.value}))}/>
       </div>
     </form>
   )

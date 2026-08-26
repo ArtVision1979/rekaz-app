@@ -752,7 +752,7 @@ export function Reports() {
           <div class="info-row"><div class="info-label">Severity</div><div class="info-value">${visit.severity||'—'}</div></div>
         </div>
       </div>
-      ${visit.notes?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div style="font-size:13px;line-height:1.6;">${visit.notes}</div></div>`:''}
+      ${(visit.summary||visit.notes)?`<div style="background:#fafafa;border:0.5px solid #eee;border-radius:8px;padding:14px 18px;margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;margin-bottom:8px;">الملاحظات · Notes</div><div dir="rtl" style="font-size:13px;line-height:1.6;text-align:right;">${visit.summary || visit.notes}</div></div>`:''}
       ${checklistHtml}
       ${freeHtml}
       ${recsHtml}
