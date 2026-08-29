@@ -246,18 +246,20 @@ export default function PeriodicSupervision() {
                   {mine.flatMap(m => {
                     const short = m.actual_visits < m.required_visits
                     return [(
-                      <tr key={m.id}>
-                        <td style={{fontWeight:600}}>{AR_MONTHS[m.month-1]} {m.year}</td>
+                      <tr key={m.id} onClick={()=>toggleMonth(m)}
+                        title="اضغط لعرض زيارات هذا الشهر"
+                        style={{cursor:'pointer',
+                                background: openMonth===m.id ? 'var(--bg)' : undefined}}>
+                        <td style={{fontWeight:600,display:'flex',alignItems:'center',gap:7}}>
+                          <span style={{fontSize:9,opacity:.55,width:9,display:'inline-block'}}>
+                            {openMonth===m.id ? '▲' : '▼'}
+                          </span>
+                          {AR_MONTHS[m.month-1]} {m.year}
+                        </td>
                         <td>{m.required_visits}</td>
-                        <td>
-                          <button type="button" onClick={()=>toggleMonth(m)}
-                            title="عرض زيارات هذا الشهر"
-                            style={{border:'none',background:'none',cursor:'pointer',padding:0,
-                                    font:'inherit',fontWeight:700,display:'flex',alignItems:'center',gap:5,
-                                    color: short ? (m.is_current_month ? '#854F0B' : '#A32D2D') : '#0F6E56'}}>
-                            {m.actual_visits}
-                            <span style={{fontSize:9,opacity:.7}}>{openMonth===m.id ? '▲' : '▼'}</span>
-                          </button>
+                        <td style={{fontWeight:700,
+                             color: short ? (m.is_current_month ? '#854F0B' : '#A32D2D') : '#0F6E56'}}>
+                          {m.actual_visits}
                         </td>
                         {/* الزيارات داخل العدد المتعاقد عليه مدفوعة سلفاً،
                             فالمحتسَب هو ما زاد وحده */}
@@ -287,17 +289,17 @@ export default function PeriodicSupervision() {
                         <td style={{textAlign:'left'}}>
                           {m.is_closed ? (
                             <button className="btn btn-sm" disabled={busy===m.id}
-                              onClick={()=>reopenMonth(m)}>إعادة فتح</button>
+                              onClick={e=>{ e.stopPropagation(); reopenMonth(m) }}>إعادة فتح</button>
                           ) : (
                             <button className="btn btn-sm btn-primary" disabled={busy===m.id}
-                              onClick={()=>closeMonth(m)}>
+                              onClick={e=>{ e.stopPropagation(); closeMonth(m) }}>
                               {busy===m.id ? '…' : 'تم الانتهاء من إشراف الشهر'}
                             </button>
                           )}
                         </td>
                       </tr>
                     ), openMonth === m.id && (
-                      <tr key={m.id + '-open'}>
+                      <tr key={m.id + '-open'} onClick={e=>e.stopPropagation()}>
                         <td colSpan={6} style={{background:'var(--bg)',padding:'12px 14px'}}>
                           {loadingVisits ? (
                             <div style={{fontSize:12.5,color:'var(--text-muted)'}}>جارٍ التحميل…</div>
