@@ -250,11 +250,13 @@ export default function PeriodicSupervision() {
                         title="اضغط لعرض زيارات هذا الشهر"
                         style={{cursor:'pointer',
                                 background: openMonth===m.id ? 'var(--bg)' : undefined}}>
-                        <td style={{fontWeight:600,display:'flex',alignItems:'center',gap:7}}>
-                          <span style={{fontSize:9,opacity:.55,width:9,display:'inline-block'}}>
-                            {openMonth===m.id ? '▲' : '▼'}
+                        <td style={{fontWeight:600}}>
+                          <span style={{display:'inline-flex',alignItems:'center',gap:7}}>
+                            <span style={{fontSize:9,opacity:.55}}>
+                              {openMonth===m.id ? '▲' : '▼'}
+                            </span>
+                            {AR_MONTHS[m.month-1]} {m.year}
                           </span>
-                          {AR_MONTHS[m.month-1]} {m.year}
                         </td>
                         <td>{m.required_visits}</td>
                         <td style={{fontWeight:700,
