@@ -31,6 +31,9 @@ export default function PeriodicSupervision() {
   const [openMonth, setOpenMonth] = useState(null)
   const [monthVisits, setMonthVisits] = useState([])
   const [loadingVisits, setLoadingVisits] = useState(false)
+  // قائمة مشاريع أولاً، ثم تفاصيل مشروع واحد. فتح كل المشاريع دفعةً
+  // واحدة يعمل مع مشروع أو اثنين، ويصير فوضى مع عشرين.
+  const [openProject, setOpenProject] = useState(null)
 
   useEffect(() => { load() }, [])
 
@@ -144,11 +147,70 @@ export default function PeriodicSupervision() {
             (زيارتان أو ثلاث في الأسبوع)، وحدّد أجر الزيارة الواحدة.
           </p>
         </div></div>
-      ) : projects.map(pr => {
+      ) : !openProject ? (
+        /* ── فهرس المشاريع ── */
+        <div style={{display:'flex',flexDirection:'column',gap:9}}>
+          {projects.map(pr => {
+            const mine = periods.filter(x => x.project_id === pr.id)
+            const now  = mine.find(x => x.is_current_month)
+            const short = now && now.actual_visits < now.required_visits
+            const ended = !!pr.supervision_ended_at
+            const due = mine.reduce((s2, x) => s2 + Number(x.extra_due || 0), 0)
+            return (
+              <div key={pr.id} className="card"
+                onClick={()=>{ setOpenProject(pr.id); setOpenMonth(null); setMonthVisits([]) }}
+                style={{cursor:'pointer',display:'flex',alignItems:'center',
+                        gap:14,flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:210}}>
+                  <div style={{fontSize:14,fontWeight:600}}>{pr.name}</div>
+                  <div style={{fontSize:11.5,color:'var(--text-muted)',marginTop:2}}>
+                    {pr.project_no || '—'} · {pr.visits_per_month || 0} زيارة شهرياً
+                    {pr.supervision_months
+                      ? ` · ${pr.supervision_months} شهراً`
+                      : ' · عقد مفتوح'}
+                  </div>
+                </div>
+
+                {ended ? (
+                  <span style={{background:'#E1F5EE',color:'#0F6E56',fontSize:11,fontWeight:700,
+                                padding:'3px 10px',borderRadius:12}}>✓ انتهى</span>
+                ) : now ? (
+                  <div style={{textAlign:'center',minWidth:78}}>
+                    <div style={{fontSize:17,fontWeight:700,fontVariantNumeric:'tabular-nums',
+                                 color: short ? '#854F0B' : '#0F6E56'}}>
+                      {now.actual_visits}/{now.required_visits}
+                    </div>
+                    <div style={{fontSize:10,color:'var(--text-muted)'}}>
+                      {AR_MONTHS[now.month-1]}
+                    </div>
+                  </div>
+                ) : (
+                  <span style={{fontSize:11.5,color:'var(--text-muted)'}}>لا شهر جارٍ</span>
+                )}
+
+                {due > 0 && (
+                  <span style={{background:'#FCEBEB',color:'#A32D2D',fontSize:11,fontWeight:700,
+                                padding:'3px 10px',borderRadius:12}}>
+                    مستحق {fmtFee(due)} د.ب
+                  </span>
+                )}
+
+                <span style={{fontSize:11.5,color:'var(--text-muted)'}}>
+                  {mine.length} شهر ‹
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      ) : projects.filter(p => p.id === openProject).map(pr => {
         const mine = periods.filter(x => x.project_id === pr.id)
         const ended = !!pr.supervision_ended_at
         return (
           <div key={pr.id} className="card" style={{marginBottom:16}}>
+            <button className="btn btn-sm" style={{marginBottom:12,fontSize:12}}
+              onClick={()=>{ setOpenProject(null); setOpenMonth(null); setMonthVisits([]) }}>
+              › كل المشاريع
+            </button>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',
                          gap:12,flexWrap:'wrap',marginBottom:12}}>
               <div>
