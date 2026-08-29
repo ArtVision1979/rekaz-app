@@ -12,14 +12,15 @@ const EMPTY = { name:'', project_no:'', location:'', client_name:'', client_phon
 //  دوري بلا عدد زيارات، أو مرحلي بعدد لا يطابق خطته. الخطة الواحدة
 //  تشتقّ النوع والأعداد معاً فلا يتناقضان.
 //
-//  الشهر ٤٫٣٥ أسبوع وسطياً — زيارتان أسبوعياً = ٩ شهرياً، وثلاث = ١٣.
+//  الشهر أربعة أسابيع في عُرف المكتب — زيارتان أسبوعياً = ٨ شهرياً،
+//  وثلاث = ١٢. (حسابياً ٤٫٣٥ أسبوع، لكن العقد يُقرأ بالعُرف لا بالكسر.)
 // ─────────────────────────────────────────────────────────────────────
 export const PLANS = {
   stage_16: { type:'stage',    visits:16, label:'١٦ زيارة — إشراف بالمراحل' },
   stage_12: { type:'stage',    visits:12, label:'١٢ زيارة — إشراف بالمراحل' },
   stage_8:  { type:'stage',    visits:8,  label:'٨ زيارات — إشراف بالمراحل' },
-  weekly_2: { type:'periodic', perWeek:2, perMonth:9,  label:'شهري — زيارتان في الأسبوع' },
-  weekly_3: { type:'periodic', perWeek:3, perMonth:13, label:'شهري — ٣ زيارات في الأسبوع' },
+  weekly_2: { type:'periodic', perWeek:2, perMonth:8,  label:'شهري — زيارتان في الأسبوع' },
+  weekly_3: { type:'periodic', perWeek:3, perMonth:12, label:'شهري — ٣ زيارات في الأسبوع' },
 }
 
 export default function Projects() {
