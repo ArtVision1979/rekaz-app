@@ -382,9 +382,9 @@ export default function ProjectVisits() {
     // الربط بالمعرّف لا بمطابقة (المشروع + التاريخ + نصّ الملاحظة):
     // مع الزيارات الإضافية يتكرّر نفس النص على نفس المرحلة فتتصادم السجلات
     const { data: existing } = await supabase.from('site_visits')
-      .select('id').eq('project_visit_id', v.id).maybeSingle()
+      .select('id, visit_date, engineer_name').eq('project_visit_id', v.id).maybeSingle()
 
-    if (!existing) {
+    async function insertRecord() {
       const { error } = await supabase.from('site_visits').insert({
         project_id: v.project_id,
         project_visit_id: v.id,
@@ -396,10 +396,52 @@ export default function ProjectVisits() {
         status: 'submitted'
       })
       if (error) throw error
+      return true
+    }
+
+    let created = false
+
+    if (!existing) {
+      created = await insertRecord()
+    } else {
+      //  سجلٌّ مربوطٌ بهذه المرحلة موجودٌ سلفاً. غالباً يكون صحيحاً —
+      //  أُنشئ في إنجازٍ سابق ثم أُعيدت الحالة. لكنه قد يكون سجلاً
+      //  غريباً: ترحيلُ الربط بمطابقة العنوان ألصق سجلاً من مايو
+      //  بمرحلةٍ أُنجزت في أغسطس، فأنجز المهندس المرحلة ولم يرَ لها
+      //  أثراً في «زيارات المواقع» — والرسالة تقول «أُنشئ سجلها».
+      //
+      //  الصمتُ هو العيب لا إعادةُ الاستعمال: إن لم يُنشأ شيء فليُقَل.
+      const gapDays = Math.abs(
+        (new Date(existing.visit_date) - new Date(visitDate)) / 86400000
+      )
+      const sameEngineer = !v.engineer_name || !existing.engineer_name ||
+                           existing.engineer_name === v.engineer_name
+
+      if (gapDays > 7 || !sameEngineer) {
+        const ok = confirm(
+          'لهذه المرحلة سجلٌّ قائمٌ في «زيارات المواقع»:\n' +
+          `    التاريخ: ${existing.visit_date}\n` +
+          `    المهندس: ${existing.engineer_name || '—'}\n\n` +
+          `وأنت تُنجزها بتاريخ ${visitDate}` +
+          (v.engineer_name ? ` باسم ${v.engineer_name}` : '') + '.\n\n' +
+          'موافق  = إنشاء سجلٍّ جديد لزيارتك (يبقى القديم في السجل بلا ربط)\n' +
+          'إلغاء  = الاكتفاء بالسجل القائم'
+        )
+        if (ok) {
+          // يُفكُّ ربطه ولا يُحذف — قد تتعلّق به تقاريرُ صدرت فعلاً
+          const { error: uErr } = await supabase.from('site_visits')
+            .update({ project_visit_id: null }).eq('id', existing.id)
+          if (uErr) throw uErr
+          created = await insertRecord()
+        }
+      }
     }
 
     // بدل أن يبحث المهندس عن المشروع في شاشة زيارات المواقع
-    if (confirm('تم إنجاز الزيارة وأُنشئ سجلها.\n\nهل تفتح زيارات المواقع الآن لتحديد نقاط الفحص وكتابة التقرير؟')) {
+    const head = created
+      ? 'تم إنجاز الزيارة وأُنشئ سجلها في «زيارات المواقع».'
+      : `تم إنجاز الزيارة. سجلها في «زيارات المواقع» موجودٌ سلفاً بتاريخ ${existing?.visit_date || visitDate}.`
+    if (confirm(head + '\n\nهل تفتح زيارات المواقع الآن لتحديد نقاط الفحص وكتابة التقرير؟')) {
       nav(`/visits?project=${v.project_id}`)
     }
   }
