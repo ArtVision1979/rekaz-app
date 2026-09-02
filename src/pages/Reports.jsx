@@ -7,16 +7,40 @@ import { useSearchParams } from 'react-router-dom'
 // ── Helper: بناء HTML الـ checklist مع فصل التوصيات (للـ PDF) ──────────
 // ملاحظات الزيارة الدورية: لا قالب لها، فلا يراها التقرير الذي يرسم
 // القالب ثم يبحث عن نتيجة كل بند. تُرسم من النتائج مباشرة.
-function buildFreeHtml(free) {
+//  ربط الصورة بملاحظتها
+//  ─────────────────────
+//  التعليق المحفوظ مع الصورة هو نصّ البند نفسه — هكذا تكتبه شاشة
+//  الزيارة الدورية. لكن التقرير كان يعرض الصور في شبكةٍ والملاحظات
+//  في جدول، ولا شيء يصل بينهما: تقرأ تعليقاً فلا تعرف أيّ صورةٍ يصف.
+//  فتُرقَّم الصور، ويشير البند إلى رقم صورته، ويحمل التعليق الرقم نفسه.
+function photoIndex(photos) {
+  const map = {}
+  ;(photos || []).forEach((p, i) => {
+    const key = String(p.caption || '').trim()
+    if (!key) return
+    if (!map[key]) map[key] = []
+    map[key].push(i + 1)
+  })
+  return map
+}
+
+const photoBadge = nums => nums && nums.length
+  ? `<span dir="ltr" style="display:inline-block;font-size:10px;font-weight:700;color:#185FA5;
+      background:#E8F0F9;border-radius:4px;padding:1px 6px;margin-inline-start:6px;
+      vertical-align:middle;white-space:nowrap;">📷 ${nums.join(', ')}</span>`
+  : ''
+
+function buildFreeHtml(free, photoMap = {}) {
   if (!free.length) return ''
   const rows = free.map((r, i) => {
     const v = r.result || 'pending'
     const color = v==='pass'?'#0F6E56':v==='fail'?'#A32D2D':v==='na'?'#888':'#aaa'
     const label = v==='pass'?'✓ Pass':v==='fail'?'✗ Fail':v==='na'?'— N/A':'○ —'
     const bg = v==='fail' ? '#FFF5F5' : i%2===0 ? '#fafafa' : 'white'
+    const pics = photoMap[String(r.item_text || '').trim()]
     return `<tr style="background:${bg};">
       <td style="padding:6px 10px;color:#888;">${i+1}</td>
-      <td style="padding:6px 10px;"><div>${r.item_text || ''}</div>${
+      <td style="padding:6px 10px;"><div>${r.item_text || ''}${photoBadge(pics)}</div>${
         r.notes ? `<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:4px;padding:2px 8px;margin-top:4px;display:inline-block;">💬 ${r.notes}</div>` : ''}</td>
       <td style="padding:6px 10px;text-align:center;color:${color};font-weight:600;">${label}</td>
     </tr>`
@@ -507,13 +531,23 @@ export function Reports() {
       const reportNo = existingReport?.report_no
         || `SVR-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
       const today = new Date().toLocaleDateString('en-GB')
-      const photoHtml = photos.map(ph => `
+      //  object-fit:cover كان يقصّ الصورة لتملأ ارتفاعاً ثابتاً، فتخرج
+      //  شريحةً أفقيةً من صورة الحديد أو القالب — وقد يقع العيب نفسه
+      //  في الجزء المقصوص. في تقرير إشرافٍ تُعرض الصورة كاملةً:
+      //  contain داخل إطارٍ بنسبةٍ ثابتة، لا قصّ ولا تمطيط.
+      const photoHtml = photos.map((ph, i) => `
         <div style="break-inside:avoid;margin-bottom:12px;">
-          <img src="${getPhotoUrl(ph.file_path)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:6px;border:0.5px solid #eee;"/>
-          ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;">${ph.caption}</div>` : ''}
+          <div style="position:relative;background:#F4F4F2;border:0.5px solid #eee;border-radius:6px;
+                      aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+            <img src="${getPhotoUrl(ph.file_path)}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;"/>
+            <span dir="ltr" style="position:absolute;top:6px;inset-inline-start:6px;background:#185FA5;color:#fff;
+                        font-size:10px;font-weight:700;border-radius:4px;padding:1px 7px;">${i + 1}</span>
+          </div>
+          ${ph.caption ? `<div style="font-size:11px;color:#666;margin-top:4px;text-align:center;line-height:1.5;">
+            <span dir="ltr" style="font-weight:700;color:#185FA5;">${i + 1}.</span> ${ph.caption}</div>` : ''}
         </div>`).join('')
       const checklistHtml = buildChecklistHtml(checklist, checklistResults)
-      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, freeHtml: buildFreeHtml(freeResults), recsHtml: buildRecsHtml(recs), photoHtml, photos, rw })
+      const html = buildSingleHtml({ reportNo, today, project: selectedProject, visit: selectedVisit, checklistHtml, freeHtml: buildFreeHtml(freeResults, photoIndex(photos)), recsHtml: buildRecsHtml(recs), photoHtml, photos, rw })
 
       // أرشفة نسخة ثابتة من التقرير في التخزين وربطها بالسجل، حتى
       // يمكن فتح التقرير لاحقاً كما صدر. سابقاً كان عمود pdf_path
@@ -664,7 +698,13 @@ export function Reports() {
 
         const phHtml = ph.length > 0 ? `
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">
-            ${ph.map(p => `<img src="${getPhotoUrl(p.file_path)}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;"/>`).join('')}
+            ${ph.map((p, i) => `
+              <div style="position:relative;background:#F4F4F2;border-radius:4px;aspect-ratio:4/3;
+                          display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                <img src="${getPhotoUrl(p.file_path)}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;"/>
+                <span dir="ltr" style="position:absolute;top:3px;inset-inline-start:3px;background:#185FA5;color:#fff;
+                            font-size:9px;font-weight:700;border-radius:3px;padding:0 5px;">${i + 1}</span>
+              </div>`).join('')}
           </div>` : ''
 
         return `
@@ -1103,12 +1143,36 @@ export function Reports() {
 
               {photos.length > 0 && (
                 <div className="card">
-                  <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>Photos ({photos.length})</div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                    {photos.map(ph=>(
-                      <img key={ph.id} src={getPhotoUrl(ph.file_path)}
-                        style={{width:'100%',height:100,objectFit:'cover',borderRadius:6,cursor:'pointer'}}
-                        onClick={()=>window.open(getPhotoUrl(ph.file_path),'_blank')}/>
+                  <div style={{fontWeight:500,fontSize:13,marginBottom:12}}>
+                    Photos ({photos.length})
+                    <span style={{fontWeight:400,fontSize:11,color:'var(--text-muted)',marginInlineStart:8}}>
+                      الرقم على الصورة هو نفسه المذكور في جدول الملاحظات
+                    </span>
+                  </div>
+                  {/*  ارتفاعٌ ثابت في خليةٍ عريضة يقصّ الصورة إلى شريحة —
+                       وهو ما جعلها تبدو «مسحوبة». إطارٌ بنسبة ٤:٣ والصورة
+                       داخله كاملةً بلا قصّ.  */}
+                  <div style={{display:'grid',gap:10,
+                               gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))'}}>
+                    {photos.map((ph,i)=>(
+                      <div key={ph.id}>
+                        <div style={{position:'relative',aspectRatio:'4 / 3',background:'var(--bg)',
+                                     border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',
+                                     display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}
+                             onClick={()=>window.open(getPhotoUrl(ph.file_path),'_blank')}>
+                          <img src={getPhotoUrl(ph.file_path)} alt={ph.caption||''}
+                            style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',display:'block'}}/>
+                          <span style={{position:'absolute',top:6,insetInlineStart:6,background:'#185FA5',
+                                        color:'#fff',fontSize:10,fontWeight:700,borderRadius:4,padding:'1px 7px'}}>
+                            {i+1}
+                          </span>
+                        </div>
+                        {ph.caption && (
+                          <div style={{fontSize:11,color:'var(--text-muted)',marginTop:5,lineHeight:1.5}}>
+                            <strong style={{color:'#185FA5'}}>{i+1}.</strong> {ph.caption}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
