@@ -349,10 +349,12 @@ export default function PeriodicSupervision() {
                                                       color: fails ? '#A32D2D' : 'var(--text-muted)'}}>
                                           {res.length} ملاحظة{fails ? ` · ${fails} راسبة` : ''}
                                         </span>
+                                        {/* الزيارة بعينها، لا قائمة زيارات المشروع كلها —
+                                            الشاشة تعرف أيّها قصد المهندس فلا يبحث عنها */}
                                         <button className="btn btn-sm" style={{fontSize:11}}
-                                          onClick={()=>nav(`/visits?project=${m.project_id}`)}>تعديل</button>
+                                          onClick={()=>nav(`/periodic-visit?visit=${v.id}`)}>تعديل</button>
                                         <button className="btn btn-sm" style={{fontSize:11}}
-                                          onClick={()=>nav(`/reports?project=${m.project_id}`)}>التقرير</button>
+                                          onClick={()=>nav(`/reports?project=${m.project_id}&visit=${v.id}`)}>التقرير</button>
                                       </div>
                                     )
                                   })}

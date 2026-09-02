@@ -237,7 +237,12 @@ export function Reports() {
       .from('site_visits').select('*').eq('project_id', projectId)
       .order('visit_date', { ascending: true })
     setVisits(data || [])
-    if (data?.length) setSelectedVisit(data[data.length - 1])
+    if (!data?.length) return
+    //  ?visit=<id> يفتح على الزيارة المقصودة. القادم من الإشراف الدوري
+    //  ضغط على زيارةٍ بعينها — فتحُ الأخيرة يعني أن يبحث عنها من جديد.
+    const wantedVisit = searchParams.get('visit')
+    const hit = wantedVisit ? data.find(v => v.id === wantedVisit) : null
+    setSelectedVisit(hit || data[data.length - 1])
   }
 
   // التقرير السابق لهذه الزيارة — وجوده يمنع إنشاء نسخة مكرّرة
@@ -388,7 +393,16 @@ export function Reports() {
     }))
   }
 
+  //  ما يُخزَّن في visit_photos.file_path رابطٌ عامٌّ كامل، لا مساراً
+  //  داخل الحاوية — هكذا تكتبه شاشات الصور والزيارة الدورية والمخططات.
+  //  تمريره إلى getPublicUrl يلفّه مرّةً ثانية فيخرج رابطٌ داخل رابط:
+  //      …/object/public/Rekaz/https://…/object/public/Rekaz/visits/…
+  //  فتظهر الصور مكسورة في التقرير وحده بينما هي سليمة في شاشة الصور.
+  //  الصور لم تُفقد قطّ — العنوان هو الخطأ. وشاشة الصور تستعمل
+  //  file_path مباشرةً، ولذلك ظهرت فيها ولم تظهر هنا.
   function getPhotoUrl(path) {
+    if (!path) return ''
+    if (/^https?:\/\//i.test(path)) return path
     const { data } = supabase.storage.from('Rekaz').getPublicUrl(path)
     return data.publicUrl
   }

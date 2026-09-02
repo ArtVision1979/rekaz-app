@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase.js'
+import { supabase, removeStorageFile } from '../lib/supabase.js'
 import { useCurrentUser } from '../hooks/useCurrentUser.js'
 import EngineerSelect from '../components/EngineerSelect.jsx'
 
@@ -32,6 +32,14 @@ export default function PeriodicVisit() {
   // القدوم من شاشة الإشراف الدوري: المشروع والشهر محدّدان مسبقاً،
   // فلا يعيد المهندس اختيارهما ولا يقع في شهر غير الذي قصده
   const [sp] = useSearchParams()
+  //  ?visit=<id> يفتح زيارةً قائمة للتعديل بدل إنشاء واحدة جديدة.
+  //  كان زرّ «تعديل» في الإشراف الدوري يرمي المهندس على قائمة زيارات
+  //  المشروع كلها فيبحث عن زيارته بين أربع عشرة — والشاشة تعرف أيّها
+  //  قصد. والتعديل يجب أن يقع حيث كُتبت الزيارة: هنا، بموضوعها
+  //  وملاحظاتها وصورها، لا في نافذةٍ تغيّر التاريخ والحالة فقط.
+  const editId = sp.get('visit') || ''
+  const [loadingVisit, setLoadingVisit] = useState(!!editId)
+  const [removed, setRemoved] = useState([])   // بنود حُذفت — تُنفَّذ عند الحفظ
   const [form, setForm] = useState({
     project_id: sp.get('project') || '',
     visit_date: sp.get('date') || localToday(),
@@ -48,11 +56,50 @@ export default function PeriodicVisit() {
   const fileRefs = useRef({})
 
   useEffect(() => { loadRefs() }, [])
+  useEffect(() => { if (editId) loadVisit(editId) }, [editId])
   useEffect(() => {
-    if (me && !form.engineer_id) {
+    //  في وضع التعديل صاحب الزيارة هو من سجّلها، لا من يفتحها الآن
+    if (me && !form.engineer_id && !editId) {
       setForm(f => ({ ...f, engineer_id: me.id, engineer_name: me.full_name || me.email }))
     }
-  }, [me])
+  }, [me, editId])
+
+  //  تحميل زيارةٍ قائمة: بياناتها وبنودها وصورها.
+  //  الصور المرفوعة سلفاً تُعرض برابطها العام مباشرةً — لا يُعاد لفّه.
+  async function loadVisit(id) {
+    setLoadingVisit(true)
+    try {
+      const [{ data: v, error: vErr }, { data: rs }, { data: ph }] = await Promise.all([
+        supabase.from('site_visits').select('*').eq('id', id).single(),
+        supabase.from('visit_checklist_results').select('*').eq('visit_id', id)
+          .is('checklist_item_id', null).order('created_at'),
+        supabase.from('visit_photos').select('*').eq('visit_id', id),
+      ])
+      if (vErr) throw vErr
+
+      setForm({
+        project_id: v.project_id, visit_date: v.visit_date,
+        engineer_id: v.engineer_id, engineer_name: v.engineer_name || '',
+        notes: v.notes || '', summary: v.summary || '',
+      })
+      //  الصورة تُربط ببندها عبر التعليق — هكذا كُتبت عند الحفظ
+      const byCaption = {}
+      ;(ph || []).forEach(p => { if (p.caption && !byCaption[p.caption]) byCaption[p.caption] = p })
+      setObs((rs || []).map((r, i) => {
+        const pic = byCaption[r.item_text]
+        return {
+          key: `db-${r.id}`, id: r.id, task_id: r.task_id,
+          item_text: r.item_text, result: r.result, notes: r.notes || '',
+          file: null, preview: pic?.file_path || r.photo_path || null,
+          photoId: pic?.id || null, photoUrl: pic?.file_path || r.photo_path || null,
+        }
+      }))
+      //  موضوعٌ محفوظ خارج قائمة المراحل: يُفتح حقل الكتابة الحرّة
+      setOther(false)
+    } catch (e) {
+      setErr('تعذّر فتح الزيارة: ' + (e?.message ?? e))
+    } finally { setLoadingVisit(false) }
+  }
 
   async function loadRefs() {
     const [{ data: pr, error: e1 }, { data: vo, error: e2 }] = await Promise.all([
@@ -94,6 +141,13 @@ export default function PeriodicVisit() {
     else { setStages([]); setPrior([]) }
   }, [form.project_id])
 
+  //  موضوعٌ محفوظ لا يطابق أياً من خيارات القائمة سيظهر فارغاً في
+  //  الـ select ويضيع عند الحفظ. فيُفتح له حقل الكتابة الحرّة.
+  useEffect(() => {
+    if (!form.notes || !stages.length) return
+    if (!stages.some(x => x.label === form.notes)) setOther(true)
+  }, [stages, form.notes])
+
   function addObs(text) {
     const t = (text || '').trim()
     if (!t) return
@@ -120,52 +174,98 @@ export default function PeriodicVisit() {
     setSaving(true); setErr('')
 
     try {
-      // ١) الزيارة نفسها
-      const { data: visit, error: vErr } = await supabase.from('site_visits').insert({
+      const severity = obs.some(o => o.result === 'fail') ? 'medium' : 'low'
+      const head = {
         project_id: form.project_id,
         visit_date: form.visit_date,
         engineer_id: form.engineer_id,
         engineer_name: form.engineer_name,
         notes: form.notes || 'زيارة دورية',
         summary: form.summary || null,
-        severity: obs.some(o => o.result === 'fail') ? 'medium' : 'low',
-        status: 'submitted',
-      }).select().single()
-      if (vErr) throw vErr
+        severity,
+      }
 
-      // ٢) الصور — تُرفع تحت مسار الزيارة
-      const rows = []
-      for (const o of obs) {
-        let photo_path = null
-        if (o.file) {
-          const ext  = o.file.name.split('.').pop()
-          const path = `visits/${visit.id}/${Date.now()}-${rows.length}.${ext}`
-          const { error: upErr } = await supabase.storage.from('Rekaz').upload(path, o.file)
-          if (upErr) throw new Error('تعذّر رفع الصورة: ' + upErr.message)
-          photo_path = supabase.storage.from('Rekaz').getPublicUrl(path).data.publicUrl
+      // ١) الزيارة نفسها
+      let visit
+      if (editId) {
+        const { data, error } = await supabase.from('site_visits')
+          .update(head).eq('id', editId).select().single()
+        if (error) throw error
+        visit = data
+      } else {
+        const { data, error } = await supabase.from('site_visits')
+          .insert({ ...head, status: 'submitted' }).select().single()
+        if (error) throw error
+        visit = data
+      }
 
+      //  رفع صورةٍ جديدة لبند — تُستبدل بها القديمة إن وُجدت
+      async function uploadFor(o, seq) {
+        const ext  = o.file.name.split('.').pop()
+        const path = `visits/${visit.id}/${Date.now()}-${seq}.${ext}`
+        const { error: upErr } = await supabase.storage.from('Rekaz').upload(path, o.file)
+        if (upErr) throw new Error('تعذّر رفع الصورة: ' + upErr.message)
+        const url = supabase.storage.from('Rekaz').getPublicUrl(path).data.publicUrl
+        if (o.photoId) {
+          await supabase.from('visit_photos')
+            .update({ file_path: url, caption: o.item_text }).eq('id', o.photoId)
+          if (o.photoUrl) await removeStorageFile(o.photoUrl)
+        } else {
           const { error: phErr } = await supabase.from('visit_photos').insert({
-            visit_id: visit.id, file_path: photo_path, caption: o.item_text,
+            visit_id: visit.id, file_path: url, caption: o.item_text,
           })
           if (phErr) throw phErr
         }
-        rows.push({
-          visit_id: visit.id,
-          checklist_item_id: null,   // ملاحظة حرة لا تنتمي لقائمة مرحلة
-          item_text: o.item_text,
-          result: o.result,
-          notes: o.notes || null,
-          photo_path,
-        })
+        return url
       }
 
-      // ٣) الملاحظات — «fail» منها يفتح مهمة متابعة تلقائياً
-      const { error: rErr } = await supabase.from('visit_checklist_results').insert(rows)
-      if (rErr) throw rErr
+      // ٢) البنود المحذوفة — تُحذف نتيجتها وصورتها وملفّها،
+      //    وتُغلق مهمة المتابعة المفتوحة لأن سببها زال
+      for (const r of removed) {
+        if (r.task_id) {
+          await supabase.from('tasks').delete().eq('id', r.task_id).in('status', ['open'])
+        }
+        if (r.photoId) await supabase.from('visit_photos').delete().eq('id', r.photoId)
+        if (r.photoUrl) await removeStorageFile(r.photoUrl)
+        const { error: dErr } = await supabase.from('visit_checklist_results')
+          .delete().eq('id', r.id)
+        if (dErr) throw dErr
+      }
+
+      // ٣) البنود — القديم يُحدَّث في مكانه والجديد يُدرج.
+      //    التحديث لا الحذف‑ثمّ‑الإدراج: القادح يغلق مهمة البند إن
+      //    أصبح سليماً ولا يكرّرها إن بقي راسباً، وهذا يضيع لو حُذف.
+      const fresh = []
+      let seq = 0
+      for (const o of obs) {
+        let photo_path = o.photoUrl || null
+        if (o.file) photo_path = await uploadFor(o, seq++)
+
+        if (o.id) {
+          const { error } = await supabase.from('visit_checklist_results').update({
+            item_text: o.item_text, result: o.result,
+            notes: o.notes || null, photo_path,
+          }).eq('id', o.id)
+          if (error) throw error
+        } else {
+          fresh.push({
+            visit_id: visit.id,
+            checklist_item_id: null,   // ملاحظة حرة لا تنتمي لقائمة مرحلة
+            item_text: o.item_text,
+            result: o.result,
+            notes: o.notes || null,
+            photo_path,
+          })
+        }
+      }
+      if (fresh.length) {
+        const { error: rErr } = await supabase.from('visit_checklist_results').insert(fresh)
+        if (rErr) throw rErr
+      }
 
       const flagged = obs.filter(o => o.result === 'fail').length
-      alert(`حُفظت الزيارة — ${obs.length} ملاحظة` +
-            (flagged ? `\nفُتحت ${flagged} مهمة متابعة تلقائياً.` : ''))
+      alert((editId ? 'حُفظت التعديلات' : 'حُفظت الزيارة') + ` — ${obs.length} ملاحظة` +
+            (flagged ? `\n${flagged} ملاحظة لها مهمة متابعة مفتوحة.` : ''))
       nav('/periodic-supervision')
     } catch (e2) {
       console.error('تعذّر حفظ الزيارة:', e2?.message ?? e2)
@@ -186,12 +286,19 @@ export default function PeriodicVisit() {
     <form onSubmit={save}>
       <div className="page-header">
         <div>
-          <h3>تسجيل زيارة دورية</h3>
-          <div className="page-sub">سجّل ما رأيته فعلاً — لا قائمة ثابتة</div>
+          <h3>{editId ? 'تعديل زيارة دورية' : 'تسجيل زيارة دورية'}</h3>
+          <div className="page-sub">
+            {editId ? `زيارة ${form.visit_date}${form.engineer_name ? ' · ' + form.engineer_name : ''}`
+                    : 'سجّل ما رأيته فعلاً — لا قائمة ثابتة'}
+          </div>
         </div>
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? 'جارٍ الحفظ…' : 'حفظ الزيارة'}
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" className="btn"
+            onClick={()=>nav('/periodic-supervision')}>رجوع</button>
+          <button type="submit" className="btn btn-primary" disabled={saving || loadingVisit}>
+            {saving ? 'جارٍ الحفظ…' : editId ? 'حفظ التعديلات' : 'حفظ الزيارة'}
+          </button>
+        </div>
       </div>
 
       {err && <div className="card" style={{marginBottom:14,color:'#A32D2D'}}>{err}</div>}
@@ -200,10 +307,14 @@ export default function PeriodicVisit() {
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:12}}>
           <div className="form-group">
             <label className="form-label">المشروع *</label>
-            <select className="form-input" required value={form.project_id}
+            {/* المشروع لا يُنقل بعد التسجيل — تقاريره ومهامه معلّقة به */}
+            <select className="form-input" required value={form.project_id} disabled={!!editId}
               onChange={e=>setForm(f=>({...f,project_id:e.target.value}))}>
               <option value="">— اختر —</option>
               {projects.map(p=>(<option key={p.id} value={p.id}>{p.name}</option>))}
+              {editId && !projects.some(p=>p.id===form.project_id) && (
+                <option value={form.project_id}>المشروع الحالي</option>
+              )}
             </select>
             {!projects.length && (
               <div style={{fontSize:11.5,color:'#854F0B',marginTop:5}}>
@@ -328,7 +439,17 @@ export default function PeriodicVisit() {
                 {o.preview ? '✓ صورة' : '📷 صورة'}
               </button>
               <button type="button" className="btn btn-sm" style={{fontSize:11.5,color:'#A32D2D'}}
-                onClick={()=>setObs(p=>p.filter(x=>x.key!==o.key))}>✕</button>
+                onClick={()=>{
+                  //  بندٌ محفوظ سلفاً: حذفه يمسّ نتيجته وصورته ومهمته،
+                  //  فلا يُنفَّذ إلا عند الحفظ وبعد إقرارٍ صريح
+                  if (o.id && !confirm(
+                    `حذف «${o.item_text}» من الزيارة؟\n\n` +
+                    'تُحذف الملاحظة وصورتها' +
+                    (o.task_id ? '، وتُلغى مهمة المتابعة المفتوحة عنها' : '') +
+                    ' عند حفظ التعديلات.')) return
+                  if (o.id) setRemoved(p => [...p, o])
+                  setObs(p=>p.filter(x=>x.key!==o.key))
+                }}>✕</button>
             </div>
           </div>
 
